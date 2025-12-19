@@ -1,0 +1,64 @@
+name: Scheduled Job Scraping
+
+on:
+  # 毎日朝9時(JST)に実行 = UTC 0:00
+  schedule:
+    - cron: '0 0 * * *'
+
+  # 手動実行も可能
+  workflow_dispatch:
+    inputs:
+      categories:
+        description: 'カテゴリ（カンマ区切り）'
+        required: false
+        default: 'system,web'
+      job_types:
+        description: '案件形式（カンマ区切り）'
+        required: false
+        default: 'project'
+      max_pages:
+        description: '最大ページ数'
+        required: false
+        default: '3'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -e .
+          pip install playwright
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Run scheduled scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # スケジュール実行時はデフォルト値を使用
+          # 手動実行時は入力値を使用
+          SCRAPE_CATEGORIES: ${{ github.event.inputs.categories || 'system,web' }}
+          SCRAPE_JOB_TYPES: ${{ github.event.inputs.job_types || 'project' }}
+          SCRAPE_MAX_PAGES: ${{ github.event.inputs.max_pages || '3' }}
+        run: |
+          cd backend
+          python scripts/scheduled_scraper.py
+
+      - name: Report result
+        if: always()
+        run: |
+          echo "Scraping completed at $(date)"
