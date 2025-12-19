@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "proposal-generator"
 version = "0.1.0"
 description = "クラウドソーシング案件向け提案文自動生成CLIツール"
-readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [
