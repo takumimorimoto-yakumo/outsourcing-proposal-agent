@@ -257,9 +257,10 @@ async def fetch_job_detail(job_id: str):
     """案件詳細をスクレイピングで取得"""
     url = f"https://www.lancers.jp/work/detail/{job_id}"
 
+    # 高速化: human_like無効
     config = ScrapingConfig(
-        human_like=HumanLikeConfig(enabled=True, min_delay=1.0, max_delay=2.0),
-        timeout=TimeoutConfig(page_load=60000, element_wait=15000),
+        human_like=HumanLikeConfig(enabled=False),
+        timeout=TimeoutConfig(page_load=30000, element_wait=5000),
     )
     scraper = LancersScraper(config)
 
@@ -345,9 +346,10 @@ async def run_scraper_task(request: ScraperStartRequest):
     print(f"  save_to_database: {request.save_to_database}")
     print("=" * 50)
 
+    # 高速化: human_like無効、タイムアウト短縮
     config = ScrapingConfig(
-        human_like=HumanLikeConfig(enabled=True, min_delay=2.0, max_delay=4.0),
-        timeout=TimeoutConfig(page_load=60000, element_wait=15000),
+        human_like=HumanLikeConfig(enabled=False),
+        timeout=TimeoutConfig(page_load=30000, element_wait=5000),
     )
     scraper = LancersScraper(config)
 
@@ -419,7 +421,8 @@ async def run_scraper_task(request: ScraperStartRequest):
                     print(f"{category_label}: {page}ページ目で{len(page_jobs)}件取得、最終ページと判断")
                     break
 
-                await asyncio.sleep(2)
+                # ページ間の短い待機（1秒）
+                await asyncio.sleep(1)
 
             # デバッグ: 詳細取得ループ開始
             print(f"詳細取得ループ開始: {len(jobs)}件, fetch_details={request.fetch_details}")
@@ -484,7 +487,8 @@ async def run_scraper_task(request: ScraperStartRequest):
                         print(f"詳細取得タイムアウト: {job.job_id}")
                     except Exception as e:
                         print(f"詳細取得エラー: {job.job_id} - {e}")
-                    await asyncio.sleep(3)
+                    # 詳細取得間の短い待機（1.5秒）
+                    await asyncio.sleep(1.5)
 
                 all_results.append(job_data)
 

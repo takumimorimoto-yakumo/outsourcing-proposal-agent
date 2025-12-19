@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""GitHub Actions用 定期スクレイピングスクリプト"""
+"""GitHub Actions用 定期スクレイピングスクリプト（並列実行対応）"""
 
 import asyncio
-import json
 import os
 import sys
 from datetime import datetime
@@ -77,119 +76,152 @@ async def save_to_database(supabase, jobs: list[dict]) -> dict:
         if not job_id:
             continue
 
-        # 既存レコードをチェック
-        existing = supabase.table("jobs").select("id").eq("job_id", job_id).execute()
+        try:
+            # 既存レコードをチェック
+            existing = supabase.table("jobs").select("id").eq("job_id", job_id).execute()
 
-        if existing.data:
-            supabase.table("jobs").update(record).eq("job_id", job_id).execute()
-            total_updated += 1
-        else:
-            supabase.table("jobs").insert(record).execute()
-            total_added += 1
+            if existing.data:
+                supabase.table("jobs").update(record).eq("job_id", job_id).execute()
+                total_updated += 1
+            else:
+                supabase.table("jobs").insert(record).execute()
+                total_added += 1
+        except Exception as e:
+            print(f"  保存エラー: {job_id} - {e}")
 
     print(f"Supabase保存完了: 追加{total_added}件, 更新{total_updated}件")
     return {"added": total_added, "updated": total_updated}
 
 
+def job_info_to_dict(job, category: str) -> dict:
+    """JobInfoをdictに変換"""
+    return {
+        "title": job.title,
+        "description": job.description,
+        "category": job.category.value if job.category else category,
+        "budget_type": job.budget_type.value if job.budget_type else "unknown",
+        "job_id": job.job_id,
+        "job_type": job.job_type.value if job.job_type else "project",
+        "status": job.status.value if job.status else "open",
+        "budget_min": job.budget_min,
+        "budget_max": job.budget_max,
+        "deadline": job.deadline,
+        "remaining_days": job.remaining_days,
+        "required_skills": job.required_skills or [],
+        "tags": job.tags or [],
+        "feature_tags": job.feature_tags or [],
+        "proposal_count": job.proposal_count,
+        "recruitment_count": job.recruitment_count,
+        "source": job.source.value if job.source else "lancers",
+        "url": job.url,
+        "client": {
+            "name": job.client.name if job.client else None,
+            "rating": job.client.rating if job.client else None,
+            "order_history": job.client.order_history if job.client else None,
+        } if job.client else None,
+        "scraped_at": datetime.now().isoformat(),
+    }
+
+
+async def scrape_category(
+    category: str,
+    job_types: list[str],
+    max_pages: int,
+    config: ScrapingConfig,
+) -> list[dict]:
+    """単一カテゴリをスクレイピング"""
+    scraper = LancersScraper(config)
+    results = []
+
+    print(f"[{category}] スクレイピング開始...")
+
+    for page_num in range(1, max_pages + 1):
+        print(f"  [{category}] {page_num}ページ目を取得中...")
+
+        url = scraper.build_search_url(
+            category=category,
+            job_types=job_types,
+            open_only=True,
+            page=page_num,
+        )
+
+        try:
+            page_jobs = await asyncio.wait_for(
+                scraper.scrape_list(url=url, max_items=50),
+                timeout=60.0
+            )
+        except asyncio.TimeoutError:
+            print(f"  [{category}] タイムアウト: {page_num}ページ目")
+            break
+        except Exception as e:
+            print(f"  [{category}] エラー: {e}")
+            break
+
+        if not page_jobs:
+            print(f"  [{category}] {page_num}ページ目は空でした")
+            break
+
+        # JobInfoをdictに変換
+        for job in page_jobs:
+            results.append(job_info_to_dict(job, category))
+
+        print(f"  [{category}] {len(page_jobs)}件取得")
+
+        if len(page_jobs) < 20:
+            print(f"  [{category}] 最終ページと判断")
+            break
+
+        # ページ間の短い待機（1秒）
+        await asyncio.sleep(1)
+
+    print(f"[{category}] 完了: {len(results)}件")
+    return results
+
+
 async def run_scheduled_scrape():
-    """定期スクレイピングを実行"""
+    """定期スクレイピングを実行（並列処理）"""
     # 設定を環境変数から取得（デフォルト値あり）
-    categories = os.getenv("SCRAPE_CATEGORIES", "system,web").split(",")
-    job_types = os.getenv("SCRAPE_JOB_TYPES", "project").split(",")
+    categories = [c.strip() for c in os.getenv("SCRAPE_CATEGORIES", "system,web").split(",")]
+    job_types = [j.strip() for j in os.getenv("SCRAPE_JOB_TYPES", "project").split(",")]
     max_pages = int(os.getenv("SCRAPE_MAX_PAGES", "3"))
 
     print("=" * 50)
-    print("定期スクレイピング開始")
+    print("定期スクレイピング開始（並列処理）")
     print(f"  カテゴリ: {categories}")
     print(f"  案件形式: {job_types}")
     print(f"  最大ページ数: {max_pages}")
     print(f"  実行時刻: {datetime.now().isoformat()}")
     print("=" * 50)
 
-    # スクレイパー設定
+    # スクレイパー設定（高速化: human_like無効）
     config = ScrapingConfig(
-        human_like=HumanLikeConfig(enabled=True, min_delay=2.0, max_delay=4.0),
-        timeout=TimeoutConfig(page_load=60000, element_wait=15000),
+        human_like=HumanLikeConfig(enabled=False),
+        timeout=TimeoutConfig(page_load=30000, element_wait=5000),
     )
-    scraper = LancersScraper(config)
 
-    # Supabaseクライアント
-    supabase = get_supabase_client()
+    # 並列でスクレイピング実行（最大2並列）
+    tasks = [
+        scrape_category(category, job_types, max_pages, config)
+        for category in categories[:2]  # 安全のため2カテゴリまで
+    ]
 
+    start_time = datetime.now()
+    results_list = await asyncio.gather(*tasks, return_exceptions=True)
+    elapsed = (datetime.now() - start_time).total_seconds()
+
+    # 結果を集約
     all_results = []
+    for i, result in enumerate(results_list):
+        if isinstance(result, Exception):
+            print(f"カテゴリ {categories[i]} でエラー: {result}")
+        else:
+            all_results.extend(result)
 
-    for category in categories:
-        category = category.strip()
-        print(f"\n[{category}] スクレイピング開始...")
-
-        for page in range(1, max_pages + 1):
-            print(f"  {page}ページ目を取得中...")
-
-            url = scraper.build_search_url(
-                category=category,
-                job_types=job_types,
-                open_only=True,
-                page=page,
-            )
-
-            try:
-                page_jobs = await asyncio.wait_for(
-                    scraper.scrape_list(url=url, max_items=50),
-                    timeout=90.0
-                )
-            except asyncio.TimeoutError:
-                print(f"  タイムアウト: {page}ページ目")
-                break
-            except Exception as e:
-                print(f"  エラー: {e}")
-                break
-
-            if not page_jobs:
-                print(f"  {page}ページ目は空でした")
-                break
-
-            # JobInfoをdictに変換
-            for job in page_jobs:
-                job_data = {
-                    "title": job.title,
-                    "description": job.description,
-                    "category": job.category.value if job.category else category,
-                    "budget_type": job.budget_type.value if job.budget_type else "unknown",
-                    "job_id": job.job_id,
-                    "job_type": job.job_type.value if job.job_type else "project",
-                    "status": job.status.value if job.status else "open",
-                    "budget_min": job.budget_min,
-                    "budget_max": job.budget_max,
-                    "deadline": job.deadline,
-                    "remaining_days": job.remaining_days,
-                    "required_skills": job.required_skills or [],
-                    "tags": job.tags or [],
-                    "feature_tags": job.feature_tags or [],
-                    "proposal_count": job.proposal_count,
-                    "recruitment_count": job.recruitment_count,
-                    "source": job.source.value if job.source else "lancers",
-                    "url": job.url,
-                    "client": {
-                        "name": job.client.name if job.client else None,
-                        "rating": job.client.rating if job.client else None,
-                        "order_history": job.client.order_history if job.client else None,
-                    } if job.client else None,
-                    "scraped_at": datetime.now().isoformat(),
-                }
-                all_results.append(job_data)
-
-            print(f"  {len(page_jobs)}件取得")
-
-            if len(page_jobs) < 20:
-                print(f"  最終ページと判断")
-                break
-
-            await asyncio.sleep(2)
-
-    print(f"\n合計: {len(all_results)}件")
+    print(f"\n合計: {len(all_results)}件 (実行時間: {elapsed:.1f}秒)")
 
     # Supabaseに保存
     if all_results:
+        supabase = get_supabase_client()
         result = await save_to_database(supabase, all_results)
         print(f"\n保存結果: 追加{result['added']}件, 更新{result['updated']}件")
 

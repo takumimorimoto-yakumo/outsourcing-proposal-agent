@@ -111,19 +111,18 @@ class LancersScraper(BaseScraper):
             url = self.build_search_url(category, job_types, open_only)
 
         async with self._get_page() as page:
-            await self._human_like_wait()
-
-            # ページ読み込み（タイムアウト30秒に短縮）
+            # ページ読み込み（タイムアウト30秒）
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             except Exception as e:
                 print(f"ページ読み込みエラー: {url} - {e}")
                 return []
 
-            await self._human_like_wait()
-
-            # コンテンツ読み込み待機
-            await asyncio.sleep(2)
+            # 案件カードの出現を待機（最大5秒）
+            try:
+                await page.wait_for_selector(".p-search-job-media", timeout=5000)
+            except Exception:
+                pass  # タイムアウトしても続行
 
             # 案件カードを取得（存在しない場合は空リストを返す）
             job_cards = await page.query_selector_all(".p-search-job-media")
@@ -318,13 +317,13 @@ class LancersScraper(BaseScraper):
             raise ValueError(f"Invalid Lancers URL: {url}")
 
         async with self._get_page() as page:
-            await self._human_like_wait()
-
             await page.goto(url, wait_until="domcontentloaded", timeout=self.config.timeout.page_load)
-            await self._human_like_wait()
 
-            # コンテンツ読み込み待機
-            await asyncio.sleep(3)
+            # メインコンテンツの出現を待機（最大5秒）
+            try:
+                await page.wait_for_selector(".p-work-detail", timeout=5000)
+            except Exception:
+                pass  # タイムアウトしても続行
 
             # 閲覧制限ページかチェック
             page_title = await page.title()
