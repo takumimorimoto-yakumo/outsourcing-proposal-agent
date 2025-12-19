@@ -23,9 +23,7 @@ load_dotenv(env_path)
 
 from src.models.config import ScrapingConfig, HumanLikeConfig, TimeoutConfig
 from src.scrapers.lancers import LancersScraper
-
-# Google Apps Script URL
-SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbyaTSvg197sNjsXy-nNojhFpyXGxky8A779ICV-VWmamnMe9EfwNuYa00rELlz9y4CMFg/exec"
+from src.db.supabase_client import get_supabase_client
 
 
 # スクレイパー状態管理
@@ -67,77 +65,158 @@ app.add_middleware(
 )
 
 
-async def save_to_spreadsheet(jobs: list[dict]) -> dict:
-    """スプレッドシートにデータを保存（バッチ処理）"""
-    batch_size = 20
+def job_to_db_record(job: dict) -> dict:
+    """案件データをDBレコード形式に変換"""
+    client = job.get("client") or {}
+    return {
+        "job_id": job.get("job_id"),
+        "title": job.get("title", ""),
+        "description": job.get("description", ""),
+        "category": job.get("category", "other"),
+        "budget_type": job.get("budget_type", "unknown"),
+        "job_type": job.get("job_type", "project"),
+        "status": job.get("status", "open"),
+        "budget_min": job.get("budget_min"),
+        "budget_max": job.get("budget_max"),
+        "deadline": job.get("deadline"),
+        "remaining_days": job.get("remaining_days"),
+        "required_skills": job.get("required_skills", []),
+        "tags": job.get("tags", []),
+        "feature_tags": job.get("feature_tags", []),
+        "proposal_count": job.get("proposal_count"),
+        "recruitment_count": job.get("recruitment_count"),
+        "source": job.get("source", "lancers"),
+        "url": job.get("url", ""),
+        "client_name": client.get("name") if isinstance(client, dict) else job.get("client_name"),
+        "client_rating": client.get("rating") if isinstance(client, dict) else job.get("client_rating"),
+        "client_review_count": client.get("review_count") if isinstance(client, dict) else job.get("client_review_count"),
+        "client_order_history": client.get("order_history") if isinstance(client, dict) else job.get("client_order_history"),
+        "scraped_at": job.get("scraped_at", datetime.now().isoformat()),
+    }
+
+
+def db_record_to_job(record: dict) -> dict:
+    """DBレコードを案件データ形式に変換"""
+    return {
+        "job_id": record.get("job_id"),
+        "title": record.get("title", ""),
+        "description": record.get("description", ""),
+        "category": record.get("category", "other"),
+        "budget_type": record.get("budget_type", "unknown"),
+        "job_type": record.get("job_type", "project"),
+        "status": record.get("status", "open"),
+        "budget_min": record.get("budget_min"),
+        "budget_max": record.get("budget_max"),
+        "deadline": record.get("deadline"),
+        "remaining_days": record.get("remaining_days"),
+        "required_skills": record.get("required_skills", []),
+        "tags": record.get("tags", []),
+        "feature_tags": record.get("feature_tags", []),
+        "proposal_count": record.get("proposal_count"),
+        "recruitment_count": record.get("recruitment_count"),
+        "source": record.get("source", "lancers"),
+        "url": record.get("url", ""),
+        "client": {
+            "name": record.get("client_name"),
+            "rating": record.get("client_rating"),
+            "review_count": record.get("client_review_count"),
+            "order_history": record.get("client_order_history"),
+        },
+        "scraped_at": record.get("scraped_at"),
+    }
+
+
+async def save_to_database(jobs: list[dict]) -> dict:
+    """Supabaseにデータを保存（upsert）"""
     total_added = 0
     total_updated = 0
-    total_count = 0
 
     try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            print(f"スプレッドシートAPI呼び出し: {len(jobs)}件を{batch_size}件ずつ送信")
+        supabase = get_supabase_client()
+        print(f"Supabase保存開始: {len(jobs)}件")
 
-            for i in range(0, len(jobs), batch_size):
-                batch = jobs[i:i+batch_size]
-                batch_num = i // batch_size + 1
-                print(f"バッチ {batch_num}: {len(batch)}件送信中...")
+        for job in jobs:
+            record = job_to_db_record(job)
+            job_id = record.get("job_id")
 
-                # GASにPOSTでデータ送信（リダイレクトを追跡しない）
-                response = await client.post(
-                    SPREADSHEET_API_URL,
-                    json=batch,
-                    follow_redirects=False,
-                )
+            if not job_id:
+                print(f"  スキップ: job_idがありません - {record.get('title', 'Unknown')}")
+                continue
 
-                # GASは302でレスポンスURLにリダイレクトする
-                if response.status_code == 302:
-                    redirect_url = response.headers.get("location")
-                    if redirect_url:
-                        response = await client.get(redirect_url)
+            # 既存レコードをチェック
+            existing = supabase.table("jobs").select("id").eq("job_id", job_id).execute()
 
-                if response.status_code == 200:
-                    try:
-                        result = response.json()
-                        if result.get("success"):
-                            total_added += result.get("added", 0)
-                            total_updated += result.get("updated", 0)
-                            total_count += result.get("count", 0)
-                            print(f"  成功: 追加{result.get('added', 0)}件, 更新{result.get('updated', 0)}件")
-                        else:
-                            print(f"  失敗: {result.get('error')}")
-                    except Exception as e:
-                        print(f"  JSONパースエラー: {e}")
-                else:
-                    print(f"  HTTPエラー: {response.status_code}")
+            if existing.data:
+                # 更新
+                supabase.table("jobs").update(record).eq("job_id", job_id).execute()
+                total_updated += 1
+            else:
+                # 新規追加
+                supabase.table("jobs").insert(record).execute()
+                total_added += 1
 
-                # Rate limit対策
-                await asyncio.sleep(1)
+        print(f"Supabase保存完了: 追加{total_added}件, 更新{total_updated}件")
+        return {
+            "success": True,
+            "added": total_added,
+            "updated": total_updated,
+            "count": total_added + total_updated
+        }
 
-            print(f"スプレッドシート保存完了: 合計追加{total_added}件, 更新{total_updated}件")
-            return {"success": True, "added": total_added, "updated": total_updated, "count": total_count}
-
-    except httpx.TimeoutException as e:
-        print(f"スプレッドシート保存タイムアウト: {e}")
-        return {"success": False, "error": f"タイムアウト: {e}", "added": total_added, "updated": total_updated}
     except Exception as e:
-        print(f"スプレッドシート保存エラー: {e}")
-        return {"success": False, "error": str(e), "added": total_added, "updated": total_updated}
+        print(f"Supabase保存エラー: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "added": total_added,
+            "updated": total_updated
+        }
 
 
-async def fetch_from_spreadsheet() -> list[dict]:
-    """スプレッドシートからデータを取得"""
+async def fetch_from_database(
+    category: Optional[str] = None,
+    job_types: Optional[list[str]] = None,
+    status: str = "open"
+) -> list[dict]:
+    """Supabaseからデータを取得"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                SPREADSHEET_API_URL,
-                follow_redirects=True,
-            )
-            data = response.json()
-            return data.get("jobs", [])
+        supabase = get_supabase_client()
+        query = supabase.table("jobs").select("*")
+
+        # フィルタ適用
+        if category and category != "all":
+            query = query.eq("category", category)
+
+        if job_types:
+            query = query.in_("job_type", job_types)
+
+        if status:
+            query = query.eq("status", status)
+
+        # 最新順にソート
+        query = query.order("scraped_at", desc=True)
+
+        result = query.execute()
+
+        # レコードを案件形式に変換
+        jobs = [db_record_to_job(record) for record in result.data]
+        return jobs
+
     except Exception as e:
-        print(f"スプレッドシート読み込みエラー: {e}")
+        print(f"Supabase読み込みエラー: {e}")
         return []
+
+
+async def clear_database() -> dict:
+    """Supabaseのデータを削除"""
+    try:
+        supabase = get_supabase_client()
+        # 全レコード削除（status != 'never_match' で全件マッチさせる）
+        supabase.table("jobs").delete().neq("status", "never_match_placeholder").execute()
+        return {"success": True, "message": "全データを削除しました"}
+    except Exception as e:
+        print(f"Supabase削除エラー: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/")
@@ -219,11 +298,11 @@ async def fetch_jobs(
     category: Optional[str] = Query(None, description="カテゴリ（省略時は全カテゴリ）"),
     job_types: str = Query("project,task,competition", description="案件形式（カンマ区切り）"),
 ):
-    """スプレッドシートから案件を取得"""
+    """データベースから案件を取得"""
     job_type_list = [jt.strip() for jt in job_types.split(",")]
 
-    # スプレッドシートから全件取得
-    jobs = await fetch_from_spreadsheet()
+    # データベースから全件取得
+    jobs = await fetch_from_database()
 
     # フィルタリング
     filtered_jobs = []
@@ -249,7 +328,7 @@ class ScraperStartRequest(BaseModel):
     job_types: list[str] = ["project"]
     max_pages: int = 3
     fetch_details: bool = False
-    save_to_spreadsheet: bool = True
+    save_to_database: bool = True
 
 
 async def run_scraper_task(request: ScraperStartRequest):
@@ -263,7 +342,7 @@ async def run_scraper_task(request: ScraperStartRequest):
     print(f"  job_types: {request.job_types}")
     print(f"  max_pages: {request.max_pages}")
     print(f"  fetch_details: {request.fetch_details}")  # ← これが重要
-    print(f"  save_to_spreadsheet: {request.save_to_spreadsheet}")
+    print(f"  save_to_database: {request.save_to_database}")
     print("=" * 50)
 
     config = ScrapingConfig(
@@ -430,22 +509,22 @@ async def run_scraper_task(request: ScraperStartRequest):
                 json.dump(all_results, f, ensure_ascii=False, indent=2)
             print(f"JSONファイル保存完了: {json_path}")
 
-        # スプレッドシートに保存
+        # データベースに保存
         added_count = 0
         updated_count = 0
-        if request.save_to_spreadsheet and all_results:
+        if request.save_to_database and all_results:
             scraper_state.phase = "saving"
-            scraper_state.message = f"スプレッドシートに{len(all_results)}件を保存中..."
-            print(f"スプレッドシートに{len(all_results)}件保存中...")
-            result = await save_to_spreadsheet(all_results)
+            scraper_state.message = f"データベースに{len(all_results)}件を保存中..."
+            print(f"データベースに{len(all_results)}件保存中...")
+            result = await save_to_database(all_results)
             if result.get("success"):
                 added_count = result.get("added", 0)
                 updated_count = result.get("updated", 0)
                 scraper_state.message = f"保存完了: 追加{added_count}件, 更新{updated_count}件"
-                print(f"スプレッドシート保存完了: 追加{added_count}件, 更新{updated_count}件")
+                print(f"データベース保存完了: 追加{added_count}件, 更新{updated_count}件")
             else:
                 scraper_state.message = f"保存失敗: {result.get('error')}"
-                print(f"スプレッドシート保存失敗: {result.get('error')}")
+                print(f"データベース保存失敗: {result.get('error')}")
 
         duration = (datetime.now() - scraper_state.started_at).seconds
         scraper_history.insert(0, {
@@ -527,10 +606,10 @@ async def cancel_scraper():
 
 @app.get("/api/scraper/stats")
 async def get_scraper_stats():
-    """スクレイピング統計を取得（履歴ベース + スプレッドシート）"""
-    jobs = await fetch_from_spreadsheet()
+    """スクレイピング統計を取得（履歴ベース + データベース）"""
+    jobs = await fetch_from_database()
 
-    # カテゴリ別集計（スプレッドシートの現在のデータ）
+    # カテゴリ別集計（データベースの現在のデータ）
     by_category: dict[str, int] = {}
     for job in jobs:
         cat = job.get("category", "unknown")
@@ -563,29 +642,27 @@ async def get_scraper_stats():
     return {
         "today": today_added,
         "this_week": this_week_added,
-        "total": len(jobs),  # スプレッドシートの総件数
+        "total": len(jobs),  # データベースの総件数
         "total_added": total_added,  # 履歴からの新規追加合計
         "by_category": by_category,
     }
 
 
+@app.post("/api/scraper/clear-database")
+async def clear_jobs_database():
+    """データベースの案件データを削除"""
+    result = await clear_database()
+    if result.get("success"):
+        return {"success": True, "message": "データベースをクリアしました"}
+    else:
+        raise HTTPException(status_code=500, detail=result.get("error", "不明なエラー"))
+
+
+# 後方互換性のためのエイリアス
 @app.post("/api/scraper/clear-spreadsheet")
-async def clear_spreadsheet():
-    """スプレッドシートのデータを削除"""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                SPREADSHEET_API_URL,
-                json={"action": "clear"},
-                follow_redirects=True,
-            )
-            result = response.json()
-            if result.get("success"):
-                return {"success": True, "message": "スプレッドシートをクリアしました"}
-            else:
-                raise HTTPException(status_code=500, detail=result.get("error", "不明なエラー"))
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=500, detail=f"通信エラー: {str(e)}")
+async def clear_spreadsheet_alias():
+    """データベースの案件データを削除（後方互換性）"""
+    return await clear_jobs_database()
 
 
 @app.get("/api/scraper/history")
@@ -702,8 +779,8 @@ async def analyze_job_priority(request: AnalyzePriorityRequest):
     # アナライザー初期化
     analyzer = JobPriorityAnalyzer(analyzer_profile)
 
-    # スプレッドシートから案件データを取得
-    all_jobs = await fetch_from_spreadsheet()
+    # データベースから案件データを取得
+    all_jobs = await fetch_from_database()
 
     # リクエストされたjob_idに対応する案件をフィルタリング
     job_id_set = set(request.job_ids)
@@ -754,8 +831,8 @@ async def analyze_all_priorities():
     # アナライザー初期化
     analyzer = JobPriorityAnalyzer(analyzer_profile)
 
-    # スプレッドシートから全案件データを取得
-    all_jobs = await fetch_from_spreadsheet()
+    # データベースから全案件データを取得
+    all_jobs = await fetch_from_database()
 
     # 分析実行
     scores = analyzer.analyze_batch(all_jobs)
@@ -796,8 +873,8 @@ async def generate_proposal(request: GenerateProposalRequestModel):
     # プロフィール読み込み
     user_profile = load_user_profile()
 
-    # スプレッドシートから案件データを取得
-    all_jobs = await fetch_from_spreadsheet()
+    # データベースから案件データを取得
+    all_jobs = await fetch_from_database()
 
     # 対象の案件を検索
     target_job = None
@@ -857,8 +934,8 @@ async def score_job(request: ScoreJobRequestModel):
     # プロフィール読み込み
     user_profile = load_user_profile()
 
-    # スプレッドシートから案件データを取得
-    all_jobs = await fetch_from_spreadsheet()
+    # データベースから案件データを取得
+    all_jobs = await fetch_from_database()
 
     # 対象の案件を検索
     target_job = None
@@ -904,8 +981,8 @@ async def score_jobs_batch(request: ScoreJobsRequestModel):
     # プロフィール読み込み
     user_profile = load_user_profile()
 
-    # スプレッドシートから案件データを取得
-    all_jobs = await fetch_from_spreadsheet()
+    # データベースから案件データを取得
+    all_jobs = await fetch_from_database()
 
     # 対象の案件を検索
     job_id_set = set(request.job_ids)

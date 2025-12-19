@@ -36,6 +36,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyperclip>=1.8",
     "rich>=13.0",
+    "fastapi>=0.104",
+    "uvicorn>=0.24",
+    "supabase>=2.0",
 ]
 
 [project.optional-dependencies]
