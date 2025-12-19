@@ -106,6 +106,9 @@ proposals/
 *.txt
 !README.txt
 
+# Scraped data output
+backend/output/
+
 # Temporary files
 tmp/
 temp/
