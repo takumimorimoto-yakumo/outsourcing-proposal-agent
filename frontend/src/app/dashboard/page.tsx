@@ -77,7 +77,7 @@ export default function DashboardPage() {
     jobTypes: string[];
     maxPages: number;
     fetchDetails: boolean;
-    saveToSpreadsheet: boolean;
+    saveToDatabase: boolean;
   }) => {
     try {
       setError(null);
@@ -87,7 +87,7 @@ export default function DashboardPage() {
         job_types: settings.jobTypes,
         max_pages: settings.maxPages,
         fetch_details: settings.fetchDetails,
-        save_to_spreadsheet: settings.saveToSpreadsheet,
+        save_to_database: settings.saveToDatabase,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "開始に失敗しました");

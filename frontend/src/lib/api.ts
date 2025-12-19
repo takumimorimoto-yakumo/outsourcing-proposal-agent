@@ -140,7 +140,7 @@ export interface ScraperStartRequest {
   job_types: string[];
   max_pages: number;
   fetch_details: boolean;
-  save_to_spreadsheet: boolean;
+  save_to_database: boolean;
 }
 
 export async function startScraper(
@@ -205,18 +205,21 @@ export async function getScraperHistory(): Promise<{ history: ScraperHistoryItem
   return response.json();
 }
 
-export async function clearSpreadsheet(): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`${API_BASE_URL}/api/scraper/clear-spreadsheet`, {
+export async function clearDatabase(): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/scraper/clear-database`, {
     method: "POST",
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || "Failed to clear spreadsheet");
+    throw new Error(error.detail || "Failed to clear database");
   }
 
   return response.json();
 }
+
+// 後方互換性のためのエイリアス
+export const clearSpreadsheet = clearDatabase;
 
 // =============================================================================
 // プロフィール管理API

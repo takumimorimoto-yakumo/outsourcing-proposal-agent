@@ -85,11 +85,11 @@ export default function SettingsPage() {
     }
   };
 
-  // スプレッドシートクリア
-  const handleClearSpreadsheet = async () => {
+  // データベースクリア
+  const handleClearDatabase = async () => {
     if (
       !confirm(
-        "スプレッドシートの全データを削除しますか？\n\nこの操作は取り消せません。"
+        "データベースの全データを削除しますか？\n\nこの操作は取り消せません。"
       )
     ) {
       return;
@@ -99,7 +99,7 @@ export default function SettingsPage() {
       setIsClearing(true);
       setMessage(null);
       await clearSpreadsheet();
-      setMessage({ type: "success", text: "スプレッドシートをクリアしました" });
+      setMessage({ type: "success", text: "データベースをクリアしました" });
     } catch (err) {
       setMessage({
         type: "error",
@@ -535,7 +535,7 @@ export default function SettingsPage() {
                   データ管理
                 </CardTitle>
                 <CardDescription>
-                  スプレッドシートに保存されているデータを管理します
+                  データベースに保存されているデータを管理します
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -543,17 +543,16 @@ export default function SettingsPage() {
                   <div className="space-y-1">
                     <div className="font-medium flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-destructive" />
-                      スプレッドシートをクリア
+                      データベースをクリア
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      スプレッドシートに保存されている全ての案件データを削除します。
-                      ヘッダー行は保持されます。
+                      データベースに保存されている全ての案件データを削除します。
                     </p>
                   </div>
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={handleClearSpreadsheet}
+                    onClick={handleClearDatabase}
                     disabled={isClearing}
                   >
                     <Trash2 className="h-4 w-4 mr-1" />
@@ -570,7 +569,7 @@ export default function SettingsPage() {
                     </div>
                     <p className="text-sm text-muted-foreground">
                       ブラウザに保存されている案件のキャッシュデータをクリアします。
-                      次回アクセス時にスプレッドシートから再取得されます。
+                      次回アクセス時にデータベースから再取得されます。
                     </p>
                   </div>
                   <Button

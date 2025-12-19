@@ -28,7 +28,7 @@ interface ScraperSettingsProps {
     jobTypes: string[];
     maxPages: number;
     fetchDetails: boolean;
-    saveToSpreadsheet: boolean;
+    saveToDatabase: boolean;
   }) => void;
 }
 
@@ -87,7 +87,7 @@ export function ScraperSettings({ isRunning, isStarting = false, onStart }: Scra
       jobTypes,
       maxPages: fetchAll ? 0 : parseInt(maxPages),  // 0 = 全件取得
       fetchDetails,
-      saveToSpreadsheet: true,
+      saveToDatabase: true,
     });
   };
 
