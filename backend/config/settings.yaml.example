@@ -1,0 +1,68 @@
+# settings.yaml - システム設定
+# このファイルを settings.yaml にコピーして編集してください
+
+# バージョン（互換性確認用）
+version: "1.0"
+
+# GitHub設定
+github:
+  # GitHubユーザー名（必須）- 自分のユーザー名に変更してください
+  username: "your-github-username"
+
+  # GitHubトークン（オプション、環境変数 GITHUB_TOKEN を推奨）
+  # token: "ghp_xxxx"
+
+# Gemini API設定
+gemini:
+  # モデル名
+  model: "gemini-pro"
+
+  # 生成パラメータ
+  temperature: 0.7   # 0.0-1.0（高いほど創造的）
+  top_p: 0.9
+  max_output_tokens: 2048
+
+  # APIキー（環境変数 GEMINI_API_KEY を推奨）
+  # api_key: "your_api_key_here"
+
+# スクレイピング設定
+scraping:
+  # ヘッドレスモード（true: バックグラウンド実行）
+  headless: true
+
+  # 人間らしい振る舞い
+  human_like:
+    enabled: true
+    min_delay: 2.0  # 最小待機時間（秒）
+    max_delay: 4.0  # 最大待機時間（秒）
+
+  # タイムアウト（ミリ秒）
+  timeout:
+    page_load: 30000
+    element_wait: 10000
+
+  # リトライ設定
+  retry:
+    max_attempts: 3
+    delay: 5
+
+# 出力設定
+output:
+  # デフォルトの出力先（stdout / clipboard / file）
+  default: "stdout"
+
+  # ファイル出力時のデフォルトディレクトリ
+  directory: "~/proposals"
+
+# ログ設定
+logging:
+  # ログレベル（DEBUG / INFO / WARNING / ERROR）
+  level: "INFO"
+
+  # ファイル出力
+  file:
+    enabled: false
+    path: "~/.proposal-gen/logs/proposal-gen.log"
+
+# デフォルトプロフィール
+default_profile: "default"
