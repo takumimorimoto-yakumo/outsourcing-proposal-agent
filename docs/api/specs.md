@@ -20,14 +20,49 @@
 
 ## 2. エンドポイント一覧
 
+### 2.1 案件関連
+
 | メソッド | パス | 説明 | 実装状況 |
 |---------|------|------|---------|
 | `GET` | `/` | ヘルスチェック | 完了 |
 | `GET` | `/api/jobs` | 案件一覧取得 | 完了 |
+| `GET` | `/api/jobs/{job_id}/detail` | 案件詳細取得 | 完了 |
 | `GET` | `/api/categories` | カテゴリ一覧 | 完了 |
 | `GET` | `/api/job-types` | 案件形式一覧 | 完了 |
-| `GET` | `/api/jobs/{id}` | 案件詳細 | 未実装 |
-| `POST` | `/api/generate` | 提案文生成 | 未実装 |
+
+### 2.2 スクレイピング関連
+
+| メソッド | パス | 説明 | 実装状況 |
+|---------|------|------|---------|
+| `POST` | `/api/scraper/start` | スクレイピング開始 | 完了 |
+| `GET` | `/api/scraper/status` | スクレイピング状態取得 | 完了 |
+| `POST` | `/api/scraper/cancel` | スクレイピングキャンセル | 完了 |
+| `GET` | `/api/scraper/stats` | スクレイピング統計情報 | 完了 |
+| `GET` | `/api/scraper/history` | スクレイピング履歴取得 | 完了 |
+| `POST` | `/api/scraper/clear-database` | データベース削除 | 完了 |
+
+### 2.3 分析・スコアリング関連
+
+| メソッド | パス | 説明 | 実装状況 |
+|---------|------|------|---------|
+| `POST` | `/api/jobs/analyze-priority` | 指定案件の優先度分析 | 完了 |
+| `GET` | `/api/jobs/analyze-all-priorities` | 全案件の優先度分析 | 完了 |
+| `POST` | `/api/jobs/ai-score` | AIスコアリング（単一） | 完了 |
+| `POST` | `/api/jobs/ai-score-batch` | AIスコアリング（バッチ） | 完了 |
+
+### 2.4 提案文生成関連
+
+| メソッド | パス | 説明 | 実装状況 |
+|---------|------|------|---------|
+| `POST` | `/api/proposals/generate` | 提案文生成 | 完了 |
+| `GET` | `/api/proposals/generate/{job_id}` | 提案文生成（GET） | 完了 |
+
+### 2.5 プロフィール関連
+
+| メソッド | パス | 説明 | 実装状況 |
+|---------|------|------|---------|
+| `GET` | `/api/profile` | ユーザープロフィール取得 | 完了 |
+| `POST` | `/api/profile` | ユーザープロフィール保存 | 完了 |
 
 ---
 

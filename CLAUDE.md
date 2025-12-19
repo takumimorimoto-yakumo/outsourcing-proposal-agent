@@ -6,7 +6,7 @@
 セッション開始時は**必ず**以下のディレクトリを確認してください：
 
 ```
-/Users/t.morimoto/Desktop/proposal-generator/docs
+/Users/t.morimoto/Desktop/proposal-agent/docs
 ```
 
 **プロジェクトの全要件定義書はこのディレクトリに格納されています。**
@@ -72,7 +72,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 ### ディレクトリ構造
 
 ```
-proposal-generator/
+proposal-agent/
 ├── backend/                # Python バックエンド
 │   ├── src/                # ソースコード
 │   │   ├── api/            # FastAPI サーバー
@@ -88,6 +88,7 @@ proposal-generator/
 │   │   ├── config/         # 設定読み込み
 │   │   └── utils/          # ユーティリティ
 │   ├── config/             # 設定ファイル
+│   ├── scripts/            # スクリプト（定期実行用）
 │   ├── output/             # スクレイピング結果（JSON）
 │   ├── tests/              # テスト
 │   ├── .venv/              # Python仮想環境
@@ -103,7 +104,11 @@ proposal-generator/
 │   │   └── types/          # 型定義
 │   └── package.json
 │
-├── scripts/                # 共通ユーティリティスクリプト
+├── supabase/               # Supabase設定・マイグレーション
+│   ├── config.toml         # Supabase設定
+│   └── migrations/         # DBマイグレーションSQL
+├── .github/workflows/      # GitHub Actions
+│   └── scheduled-scrape.yml # 定期スクレイピング
 └── docs/                   # ドキュメント
 ```
 
@@ -114,6 +119,7 @@ proposal-generator/
 | **バックエンド** | Python 3.9+, FastAPI, Playwright |
 | **フロントエンド** | Next.js 16, React 19, TypeScript |
 | **UIライブラリ** | shadcn/ui, Tailwind CSS v4 |
+| **データベース** | Supabase (PostgreSQL) |
 | **スクレイピング** | Playwright (Chromium) |
 | **API通信** | REST API |
 
@@ -148,16 +154,48 @@ npm run dev
 
 ## API エンドポイント
 
+### 案件関連
+
 | メソッド | パス | 説明 |
 |---------|------|------|
 | `GET` | `/api/jobs` | 保存済み案件を取得 |
+| `GET` | `/api/jobs/{job_id}/detail` | 案件詳細を取得（スクレイピング） |
 | `GET` | `/api/categories` | カテゴリ一覧を取得 |
 | `GET` | `/api/job-types` | 案件形式一覧を取得 |
+
+### スクレイピング関連
+
+| メソッド | パス | 説明 |
+|---------|------|------|
 | `POST` | `/api/scraper/start` | スクレイピング開始 |
 | `GET` | `/api/scraper/status` | スクレイピング状態取得 |
+| `POST` | `/api/scraper/cancel` | スクレイピングキャンセル |
+| `GET` | `/api/scraper/stats` | スクレイピング統計情報 |
+| `GET` | `/api/scraper/history` | スクレイピング履歴取得 |
+| `POST` | `/api/scraper/clear-database` | データベースデータ削除 |
+
+### 分析・スコアリング関連
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/jobs/analyze-priority` | 指定案件の優先度分析 |
+| `GET` | `/api/jobs/analyze-all-priorities` | 全案件の優先度分析 |
+| `POST` | `/api/jobs/ai-score` | AIスコアリング（単一案件） |
+| `POST` | `/api/jobs/ai-score-batch` | AIスコアリング（バッチ） |
+
+### 提案文生成関連
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/proposals/generate` | 提案文生成 |
+| `GET` | `/api/proposals/generate/{job_id}` | 提案文生成（GET） |
+
+### プロフィール関連
+
+| メソッド | パス | 説明 |
+|---------|------|------|
 | `GET` | `/api/profile` | ユーザープロフィール取得 |
 | `POST` | `/api/profile` | ユーザープロフィール保存 |
-| `GET` | `/api/jobs/analyze-all-priorities` | 全案件の優先度分析 |
 
 ### `/api/jobs` パラメータ
 
@@ -229,6 +267,14 @@ npx shadcn@latest add <component-name>
 | `JobCard` | `job-card.tsx` | 案件カード |
 | `JobList` | `job-list.tsx` | 案件一覧 |
 | `JobFilters` | `job-filters.tsx` | フィルター（カテゴリ・形式） |
+| `JobDetailPopover` | `job-detail-popover.tsx` | 案件詳細ポップオーバー |
+| `PipelineLayout` | `pipeline-layout.tsx` | パイプラインレイアウト |
+| `PipelineSidebar` | `pipeline-sidebar.tsx` | パイプラインサイドバー |
+| `PipelineSummary` | `pipeline-summary.tsx` | パイプライン概要表示 |
+| `ScraperSettings` | `scraper-settings.tsx` | スクレイパー設定 |
+| `ScraperProgress` | `scraper-progress.tsx` | スクレイピング進捗表示 |
+| `ScraperStats` | `scraper-stats.tsx` | スクレイピング統計表示 |
+| `ScraperHistory` | `scraper-history.tsx` | スクレイピング履歴表示 |
 
 ---
 
@@ -296,8 +342,9 @@ npx shadcn@latest add <component-name>
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Playwright Documentation](https://playwright.dev/python/)
 - [shadcn/ui Documentation](https://ui.shadcn.com/)
+- [Supabase Documentation](https://supabase.com/docs)
 
 ---
 
-**最終更新**: 2025-12-18
-**バージョン**: 1.1.0
+**最終更新**: 2025-12-19
+**バージョン**: 1.2.0

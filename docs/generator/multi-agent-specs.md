@@ -244,6 +244,58 @@ interface QualityCheckOutput {
 
 ---
 
+### 2.5. スコアリングAI（Job Scoring Agent）
+
+**役割**: 案件の優先度と適合度のスコアリング
+
+**責務**:
+- 案件とユーザースキルの適合度評価
+- 競争率・予算・納期の総合評価
+- 優先度スコアの算出
+
+**入力**:
+```typescript
+interface JobScoringInput {
+  job: Job;                      // 案件情報
+  user_profile: UserProfile;     // ユーザープロフィール
+}
+```
+
+**出力**:
+```typescript
+interface JobScoringOutput {
+  // 総合スコア
+  overall_score: number;         // 0-100
+
+  // 個別スコア
+  scores: {
+    skill_match: number;         // スキル適合度 (0-100)
+    budget_attractiveness: number;  // 予算魅力度 (0-100)
+    competition_level: number;   // 競争率（低いほど良い） (0-100)
+    deadline_feasibility: number;  // 納期実現可能性 (0-100)
+    client_reliability: number;  // クライアント信頼度 (0-100)
+  };
+
+  // 推奨理由
+  recommendation: {
+    strengths: string[];         // 応募すべき理由
+    concerns: string[];          // 注意点
+    priority: "high" | "medium" | "low";  // 優先度
+  };
+}
+```
+
+**スコアリング基準**:
+| 項目 | 重み | 評価基準 |
+|------|------|----------|
+| スキル適合度 | 30% | プロフィールスキルとの一致度 |
+| 予算魅力度 | 20% | 市場相場との比較 |
+| 競争率 | 20% | 提案数/募集人数 |
+| 納期実現可能性 | 15% | 残り日数と作業量 |
+| クライアント信頼度 | 15% | 評価・発注履歴 |
+
+---
+
 ## 3. データフロー
 
 ```
@@ -332,8 +384,10 @@ backend/src/
 ├── agents/
 │   ├── __init__.py
 │   ├── base.py              # エージェント基底クラス
+│   ├── models.py            # エージェント用データモデル
 │   ├── boss.py              # Boss AI
 │   ├── job_understanding.py # 案件理解AI
+│   ├── job_scoring.py       # スコアリングAI
 │   ├── proposal_writing.py  # 文面作成AI
 │   └── quality_check.py     # チェックAI
 ├── models/
