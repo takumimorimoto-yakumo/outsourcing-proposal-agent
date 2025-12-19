@@ -1,0 +1,5 @@
+"""設定管理モジュール"""
+
+from src.config.loader import ConfigLoader
+
+__all__ = ["ConfigLoader"]
