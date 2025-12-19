@@ -20,6 +20,14 @@ on:
         description: '最大ページ数'
         required: false
         default: '3'
+      fetch_details:
+        description: '詳細情報を取得する'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   scrape:
@@ -54,6 +62,8 @@ jobs:
           SCRAPE_CATEGORIES: ${{ github.event.inputs.categories || 'system,web' }}
           SCRAPE_JOB_TYPES: ${{ github.event.inputs.job_types || 'project' }}
           SCRAPE_MAX_PAGES: ${{ github.event.inputs.max_pages || '3' }}
+          FETCH_DETAILS: ${{ github.event.inputs.fetch_details || 'true' }}
+          MAX_EXECUTION_MINUTES: '25'  # GitHub Actions timeout-minutesより少し短く
         run: |
           cd backend
           python scripts/scheduled_scraper.py

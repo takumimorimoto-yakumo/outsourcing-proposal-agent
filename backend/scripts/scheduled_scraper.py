@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GitHub Actions用 定期スクレイピングスクリプト（並列実行対応）"""
+"""GitHub Actions用 定期スクレイピングスクリプト（並列実行・詳細取得対応）"""
 
 import asyncio
 import os
@@ -19,6 +19,9 @@ from src.scrapers.lancers import LancersScraper
 
 # 環境変数読み込み
 load_dotenv()
+
+# 全体タイムアウト（GitHub Actions対策: デフォルト30分）
+MAX_EXECUTION_MINUTES = int(os.getenv("MAX_EXECUTION_MINUTES", "30"))
 
 
 def get_supabase_client():
@@ -123,11 +126,49 @@ def job_info_to_dict(job, category: str) -> dict:
     }
 
 
+async def fetch_job_detail(scraper: LancersScraper, job_data: dict) -> dict:
+    """案件の詳細情報を取得"""
+    job_id = job_data.get("job_id")
+    if not job_id:
+        return job_data
+
+    detail_url = f"https://www.lancers.jp/work/detail/{job_id}"
+
+    try:
+        detail = await asyncio.wait_for(
+            scraper.scrape(detail_url),
+            timeout=30.0
+        )
+
+        # 詳細情報で更新
+        job_data["description"] = detail.description or job_data.get("description", "")
+        job_data["required_skills"] = detail.required_skills or job_data.get("required_skills", [])
+        job_data["deadline"] = detail.deadline or job_data.get("deadline")
+
+        if detail.client:
+            job_data["client"] = {
+                "name": detail.client.name,
+                "rating": detail.client.rating,
+                "order_history": detail.client.order_history,
+            }
+
+        return job_data
+
+    except asyncio.TimeoutError:
+        print(f"    詳細取得タイムアウト: {job_id}")
+        return job_data
+    except Exception as e:
+        print(f"    詳細取得エラー: {job_id} - {e}")
+        return job_data
+
+
 async def scrape_category(
     category: str,
     job_types: list[str],
     max_pages: int,
     config: ScrapingConfig,
+    fetch_details: bool = False,
+    start_time: datetime = None,
 ) -> list[dict]:
     """単一カテゴリをスクレイピング"""
     scraper = LancersScraper(config)
@@ -135,7 +176,15 @@ async def scrape_category(
 
     print(f"[{category}] スクレイピング開始...")
 
+    # 一覧取得フェーズ
     for page_num in range(1, max_pages + 1):
+        # タイムアウトチェック
+        if start_time:
+            elapsed_minutes = (datetime.now() - start_time).total_seconds() / 60
+            if elapsed_minutes > MAX_EXECUTION_MINUTES:
+                print(f"  [{category}] 全体タイムアウト({MAX_EXECUTION_MINUTES}分)到達、中断します")
+                break
+
         print(f"  [{category}] {page_num}ページ目を取得中...")
 
         url = scraper.build_search_url(
@@ -174,6 +223,26 @@ async def scrape_category(
         # ページ間の短い待機（1秒）
         await asyncio.sleep(1)
 
+    # 詳細取得フェーズ
+    if fetch_details and results:
+        print(f"  [{category}] 詳細取得開始: {len(results)}件")
+
+        for idx, job_data in enumerate(results):
+            # タイムアウトチェック
+            if start_time:
+                elapsed_minutes = (datetime.now() - start_time).total_seconds() / 60
+                if elapsed_minutes > MAX_EXECUTION_MINUTES:
+                    print(f"  [{category}] 全体タイムアウト到達、詳細取得を中断 ({idx}/{len(results)}件完了)")
+                    break
+
+            print(f"    [{category}] 詳細取得中: {idx + 1}/{len(results)}")
+            results[idx] = await fetch_job_detail(scraper, job_data)
+
+            # 詳細取得間の待機（1.5秒）
+            await asyncio.sleep(1.5)
+
+        print(f"  [{category}] 詳細取得完了")
+
     print(f"[{category}] 完了: {len(results)}件")
     return results
 
@@ -184,12 +253,15 @@ async def run_scheduled_scrape():
     categories = [c.strip() for c in os.getenv("SCRAPE_CATEGORIES", "system,web").split(",")]
     job_types = [j.strip() for j in os.getenv("SCRAPE_JOB_TYPES", "project").split(",")]
     max_pages = int(os.getenv("SCRAPE_MAX_PAGES", "3"))
+    fetch_details = os.getenv("FETCH_DETAILS", "true").lower() == "true"
 
     print("=" * 50)
     print("定期スクレイピング開始（並列処理）")
     print(f"  カテゴリ: {categories}")
     print(f"  案件形式: {job_types}")
     print(f"  最大ページ数: {max_pages}")
+    print(f"  詳細取得: {'有効' if fetch_details else '無効'}")
+    print(f"  最大実行時間: {MAX_EXECUTION_MINUTES}分")
     print(f"  実行時刻: {datetime.now().isoformat()}")
     print("=" * 50)
 
@@ -199,13 +271,21 @@ async def run_scheduled_scrape():
         timeout=TimeoutConfig(page_load=30000, element_wait=5000),
     )
 
+    start_time = datetime.now()
+
     # 並列でスクレイピング実行（最大2並列）
     tasks = [
-        scrape_category(category, job_types, max_pages, config)
+        scrape_category(
+            category,
+            job_types,
+            max_pages,
+            config,
+            fetch_details=fetch_details,
+            start_time=start_time,
+        )
         for category in categories[:2]  # 安全のため2カテゴリまで
     ]
 
-    start_time = datetime.now()
     results_list = await asyncio.gather(*tasks, return_exceptions=True)
     elapsed = (datetime.now() - start_time).total_seconds()
 
