@@ -12,7 +12,7 @@ export function w(chars: number): number {
 export const STORAGE_KEY_PREFIX = "proposal-generator-job-table";
 
 // スキーマバージョン（カラム構造が変わったらインクリメント）
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 5;
 
 // カラムメタデータ
 export interface ColumnMeta {
@@ -27,13 +27,16 @@ export function getAvailableColumns(): ColumnMeta[] {
     { id: "ai_score", label: "AIスコア" },
     { id: "title", label: "タイトル" },
     { id: "category", label: "カテゴリ" },
-    { id: "job_type", label: "案件形式" },
+    { id: "subcategory", label: "サブカテゴリ" },
+    { id: "all_tags", label: "タグ" },
+    { id: "job_type", label: "形式" },
     { id: "budget", label: "予算" },
-    { id: "remaining_days", label: "残り日数" },
-    { id: "proposal_count", label: "応募状況" },
-    { id: "client_rating", label: "クライアント評価" },
-    { id: "tags", label: "タグ" },
-    { id: "feature_tags", label: "特徴" },
+    { id: "remaining_days", label: "残り" },
+    { id: "proposal_count", label: "応募" },
+    { id: "recruitment_count", label: "募集" },
+    { id: "client_name", label: "クライアント" },
+    { id: "client_rating", label: "評価" },
+    { id: "client_order_history", label: "発注数" },
     { id: "actions", label: "アクション" },
   ];
 }
@@ -41,18 +44,21 @@ export function getAvailableColumns(): ColumnMeta[] {
 // デフォルトのカラムサイズ
 export const DEFAULT_COLUMN_SIZES: Record<string, number> = {
   select: CHECKBOX_WIDTH,
-  ai_score: 120,
-  title: 300,
-  category: 120,
-  job_type: 100,
-  budget: 220,
-  remaining_days: 80,
-  proposal_count: 100,
-  client_rating: 140,
-  tags: 150,
-  feature_tags: 180,
+  ai_score: 80,
+  title: 280,
+  category: 100,
+  subcategory: 100,
+  all_tags: 180,
+  job_type: 90,
+  budget: 180,
+  remaining_days: 60,
+  proposal_count: 60,
+  recruitment_count: 60,
+  client_name: 120,
+  client_rating: 60,
+  client_order_history: 70,
   actions: 48,
 };
 
 // デフォルトで非表示のカラム
-export const DEFAULT_HIDDEN_COLUMNS: string[] = ["tags"];
+export const DEFAULT_HIDDEN_COLUMNS: string[] = [];

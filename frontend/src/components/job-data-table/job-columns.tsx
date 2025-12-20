@@ -1,7 +1,7 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { Job, CATEGORY_LABELS, JOB_TYPE_LABELS } from "@/types/job";
+import { Job, CATEGORY_LABELS, SUBCATEGORY_LABELS, JOB_TYPE_LABELS } from "@/types/job";
 import { formatBudget, AIJobScore } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -277,18 +277,6 @@ export function getJobColumns(
               <div className="line-clamp-1 text-sm font-medium" title={job.title}>
                 {job.title}
               </div>
-              {job.feature_tags.length > 0 && (
-                <div className="flex gap-1 mt-1 flex-wrap">
-                  {job.feature_tags.slice(0, 2).map((tag, i) => (
-                    <span
-                      key={i}
-                      className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded whitespace-nowrap"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </JobDetailPopover>
         );
@@ -309,6 +297,61 @@ export function getJobColumns(
         </Badge>
       ),
       size: DEFAULT_COLUMN_SIZES.category,
+      minSize: MIN_COLUMN_WIDTH,
+    },
+
+    // サブカテゴリ
+    {
+      accessorKey: "subcategory",
+      header: ({ column }) => (
+        <SortableHeader column={column}>サブカテゴリ</SortableHeader>
+      ),
+      cell: ({ row }) => {
+        const subcategory = row.original.subcategory;
+        if (!subcategory) return <span className="text-muted-foreground">-</span>;
+        return (
+          <span className="text-xs text-muted-foreground">
+            {SUBCATEGORY_LABELS[subcategory] || subcategory}
+          </span>
+        );
+      },
+      size: DEFAULT_COLUMN_SIZES.subcategory,
+      minSize: MIN_COLUMN_WIDTH,
+    },
+
+    // タグ（tags + feature_tags を統合）
+    {
+      id: "all_tags",
+      accessorFn: (row) => [...(row.tags || []), ...(row.feature_tags || [])].length,
+      header: "タグ",
+      cell: ({ row }) => {
+        const tags = row.original.tags || [];
+        const featureTags = row.original.feature_tags || [];
+        const allTags = [...new Set([...featureTags, ...tags])]; // 重複排除、feature_tagsを優先
+
+        if (allTags.length === 0) {
+          return <span className="text-muted-foreground text-sm">-</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {allTags.slice(0, 3).map((tag, i) => (
+              <span
+                key={i}
+                className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded whitespace-nowrap"
+              >
+                {tag}
+              </span>
+            ))}
+            {allTags.length > 3 && (
+              <span className="text-xs text-muted-foreground">
+                +{allTags.length - 3}
+              </span>
+            )}
+          </div>
+        );
+      },
+      enableSorting: false,
+      size: DEFAULT_COLUMN_SIZES.all_tags,
       minSize: MIN_COLUMN_WIDTH,
     },
 
@@ -368,22 +411,57 @@ export function getJobColumns(
       minSize: MIN_COLUMN_WIDTH,
     },
 
-    // 応募状況
+    // 応募数
     {
       id: "proposal_count",
       accessorFn: (row) => row.proposal_count ?? 0,
       header: ({ column }) => (
         <SortableHeader column={column}>応募</SortableHeader>
       ),
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.proposal_count ?? "-"}
+        </span>
+      ),
+      size: DEFAULT_COLUMN_SIZES.proposal_count,
+      minSize: MIN_COLUMN_WIDTH,
+    },
+
+    // 募集人数
+    {
+      id: "recruitment_count",
+      accessorFn: (row) => row.recruitment_count ?? 0,
+      header: ({ column }) => (
+        <SortableHeader column={column}>募集</SortableHeader>
+      ),
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.recruitment_count ?? "-"}
+        </span>
+      ),
+      size: DEFAULT_COLUMN_SIZES.recruitment_count,
+      minSize: MIN_COLUMN_WIDTH,
+    },
+
+    // クライアント名
+    {
+      id: "client_name",
+      accessorKey: "client_name",
+      header: ({ column }) => (
+        <SortableHeader column={column}>クライアント</SortableHeader>
+      ),
       cell: ({ row }) => {
-        const { proposal_count, recruitment_count } = row.original;
+        const client_name = row.original.client_name;
         return (
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            {proposal_count ?? "-"}/{recruitment_count ?? "-"}
-          </span>
+          <div
+            className="text-sm truncate max-w-[120px]"
+            title={client_name || undefined}
+          >
+            {client_name || "-"}
+          </div>
         );
       },
-      size: DEFAULT_COLUMN_SIZES.proposal_count,
+      size: DEFAULT_COLUMN_SIZES.client_name,
       minSize: MIN_COLUMN_WIDTH,
     },
 
@@ -392,97 +470,45 @@ export function getJobColumns(
       id: "client_rating",
       accessorFn: (row) => row.client_rating ?? 0,
       header: ({ column }) => (
-        <SortableHeader column={column}>クライアント</SortableHeader>
+        <SortableHeader column={column}>評価</SortableHeader>
       ),
       cell: ({ row }) => {
-        const { client_name, client_rating, client_order_history } = row.original;
+        const client_rating = row.original.client_rating;
+        if (typeof client_rating !== "number") {
+          return <span className="text-muted-foreground">-</span>;
+        }
         return (
-          <div className="min-w-0">
-            <div
-              className="text-sm truncate max-w-[120px]"
-              title={client_name || undefined}
-            >
-              {client_name || "-"}
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              {client_rating !== null && (
-                <span className="text-yellow-600 whitespace-nowrap">
-                  ★{client_rating.toFixed(1)}
-                </span>
-              )}
-              {client_order_history !== null && client_order_history > 0 && (
-                <span className="text-muted-foreground whitespace-nowrap">
-                  ({client_order_history}件)
-                </span>
-              )}
-            </div>
-          </div>
+          <span className="text-yellow-600 text-sm whitespace-nowrap">
+            ★{client_rating.toFixed(1)}
+          </span>
         );
       },
       size: DEFAULT_COLUMN_SIZES.client_rating,
       minSize: MIN_COLUMN_WIDTH,
     },
 
-    // タグ
+    // 発注履歴
     {
-      accessorKey: "tags",
-      header: "タグ",
+      id: "client_order_history",
+      accessorFn: (row) => row.client_order_history ?? 0,
+      header: ({ column }) => (
+        <SortableHeader column={column}>発注数</SortableHeader>
+      ),
       cell: ({ row }) => {
-        const tags = row.original.tags;
-        if (!tags || tags.length === 0) {
-          return <span className="text-muted-foreground text-sm">-</span>;
+        const history = row.original.client_order_history;
+        if (typeof history !== "number") {
+          return <span className="text-muted-foreground">-</span>;
         }
         return (
-          <div className="flex flex-wrap gap-1">
-            {tags.slice(0, 3).map((tag, i) => (
-              <Badge key={i} variant="outline" className="text-xs">
-                {tag}
-              </Badge>
-            ))}
-            {tags.length > 3 && (
-              <span className="text-xs text-muted-foreground">
-                +{tags.length - 3}
-              </span>
-            )}
-          </div>
+          <span className="text-sm text-muted-foreground">
+            {history}件
+          </span>
         );
       },
-      enableSorting: false,
-      size: DEFAULT_COLUMN_SIZES.tags,
+      size: DEFAULT_COLUMN_SIZES.client_order_history,
       minSize: MIN_COLUMN_WIDTH,
     },
 
-    // 特徴タグ
-    {
-      accessorKey: "feature_tags",
-      header: "特徴",
-      cell: ({ row }) => {
-        const tags = row.original.feature_tags;
-        if (!tags || tags.length === 0) {
-          return <span className="text-muted-foreground text-sm">-</span>;
-        }
-        return (
-          <div className="flex flex-wrap gap-1">
-            {tags.slice(0, 3).map((tag, i) => (
-              <span
-                key={i}
-                className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded whitespace-nowrap"
-              >
-                {tag}
-              </span>
-            ))}
-            {tags.length > 3 && (
-              <span className="text-xs text-muted-foreground">
-                +{tags.length - 3}
-              </span>
-            )}
-          </div>
-        );
-      },
-      enableSorting: false,
-      size: DEFAULT_COLUMN_SIZES.feature_tags,
-      minSize: MIN_COLUMN_WIDTH,
-    },
 
     // アクション
     {
