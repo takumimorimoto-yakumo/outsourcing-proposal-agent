@@ -21,6 +21,17 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Trash2,
   Database,
   AlertTriangle,
@@ -46,6 +57,8 @@ import {
 } from "@/types/profile";
 import { CATEGORY_LABELS } from "@/types/job";
 
+const CONFIRM_TEXT = "delete all data";
+
 export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -56,6 +69,8 @@ export default function SettingsPage() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // プロフィール状態
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
@@ -99,19 +114,13 @@ export default function SettingsPage() {
 
   // データベースクリア
   const handleClearDatabase = async () => {
-    if (
-      !confirm(
-        "データベースの全データを削除しますか？\n\nこの操作は取り消せません。"
-      )
-    ) {
-      return;
-    }
-
     try {
       setIsClearing(true);
       setMessage(null);
       await clearSpreadsheet();
       setMessage({ type: "success", text: "データベースをクリアしました" });
+      setDeleteDialogOpen(false);
+      setDeleteConfirmText("");
     } catch (err) {
       setMessage({
         type: "error",
@@ -731,7 +740,7 @@ export default function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-start justify-between gap-4 p-4 border rounded-lg">
+                <div className="flex items-start justify-between gap-4 p-4 border rounded-lg border-destructive/30 bg-destructive/5">
                   <div className="space-y-1">
                     <div className="font-medium flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -739,17 +748,75 @@ export default function SettingsPage() {
                     </div>
                     <p className="text-sm text-muted-foreground">
                       データベースに保存されている全ての案件データを削除します。
+                      <br />
+                      <span className="text-destructive font-medium">この操作は取り消せません。</span>
                     </p>
                   </div>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleClearDatabase}
-                    disabled={isClearing}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    {isClearing ? "削除中..." : "削除"}
-                  </Button>
+                  <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => {
+                    setDeleteDialogOpen(open);
+                    if (!open) setDeleteConfirmText("");
+                  }}>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={isClearing}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        削除
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                          <AlertTriangle className="h-5 w-5" />
+                          データベースを完全に削除
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="space-y-3">
+                          <p>
+                            この操作を実行すると、データベースに保存されている
+                            <span className="font-semibold text-foreground">全ての案件データ</span>
+                            が完全に削除されます。
+                          </p>
+                          <p className="text-destructive font-medium">
+                            この操作は取り消せません。
+                          </p>
+                          <div className="pt-2">
+                            <p className="text-sm mb-2">
+                              続行するには <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">{CONFIRM_TEXT}</code> と入力してください：
+                            </p>
+                            <Input
+                              value={deleteConfirmText}
+                              onChange={(e) => setDeleteConfirmText(e.target.value)}
+                              placeholder={CONFIRM_TEXT}
+                              className="font-mono"
+                              autoComplete="off"
+                            />
+                          </div>
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isClearing}>キャンセル</AlertDialogCancel>
+                        <Button
+                          variant="destructive"
+                          onClick={handleClearDatabase}
+                          disabled={deleteConfirmText !== CONFIRM_TEXT || isClearing}
+                        >
+                          {isClearing ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              削除中...
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              完全に削除する
+                            </>
+                          )}
+                        </Button>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
 
                 {/* ローカルキャッシュクリア */}

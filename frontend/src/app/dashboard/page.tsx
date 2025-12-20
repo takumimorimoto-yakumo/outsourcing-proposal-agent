@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { PipelineLayout } from "@/components/pipeline-layout";
 import { PipelineSummary } from "@/components/pipeline-summary";
 import { ScraperSettings } from "@/components/scraper-settings";
@@ -38,6 +38,14 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // ポーリング用のref（isStartingの最新値を参照するため）
+  const isStartingRef = useRef(isStarting);
+  const wasRunningRef = useRef(false);
+
+  useEffect(() => {
+    isStartingRef.current = isStarting;
+  }, [isStarting]);
+
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
 
@@ -49,12 +57,13 @@ export default function DashboardPage() {
         // サーバーが実行中になったら isStarting を解除
         if (statusData.is_running) {
           setIsStarting(false);
+          wasRunningRef.current = true;
         }
 
-        if (!statusData.is_running && intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
-          setIsStarting(false);
+        // 実行中→停止になった時だけデータを再読み込み
+        // isStarting中は停止しない（サーバーがまだ開始していない可能性がある）
+        if (!statusData.is_running && wasRunningRef.current && !isStartingRef.current) {
+          wasRunningRef.current = false;
           loadData();
         }
       } catch (err) {
@@ -65,6 +74,7 @@ export default function DashboardPage() {
 
     pollStatus();
     loadData();
+    // 常にポーリングを続ける（2秒間隔）
     intervalId = setInterval(pollStatus, 2000);
 
     return () => {
