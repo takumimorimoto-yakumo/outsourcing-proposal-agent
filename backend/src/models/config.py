@@ -10,7 +10,7 @@ from src.models.job import JobCategory
 class GeminiConfig:
     """Gemini API設定"""
 
-    model: str = "gemini-pro"
+    model: str = "gemini-2.0-flash"  # See src/config/models.py for available models
     temperature: float = 0.7
     top_p: float = 0.9
     max_output_tokens: int = 2048

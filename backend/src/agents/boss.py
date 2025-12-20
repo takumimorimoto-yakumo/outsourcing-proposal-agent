@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+from src.config.models import RECOMMENDED
 from .job_understanding import JobUnderstandingAgent
 from .proposal_writing import ProposalWritingAgent
 from .quality_check import QualityCheckAgent
@@ -35,7 +36,7 @@ class BossAgent:
 
     def __init__(
         self,
-        model_name: str = "gemini-2.0-flash",
+        model_name: str = RECOMMENDED.PROPOSAL_GENERATION,
         temperature: float = 0.7,
     ):
         self.model_name = model_name

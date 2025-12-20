@@ -21,6 +21,7 @@ from src.models.config import (
 )
 from src.models.errors import ConfigError
 from src.models.job import JobCategory
+from src.config.models import RECOMMENDED
 
 
 class ConfigLoader:
@@ -93,7 +94,7 @@ class ConfigLoader:
     def _load_gemini_config(self, data: dict) -> GeminiConfig:
         """Gemini設定を読み込む"""
         return GeminiConfig(
-            model=data.get("model", "gemini-pro"),
+            model=data.get("model", RECOMMENDED.DEFAULT),
             temperature=data.get("temperature", 0.7),
             top_p=data.get("top_p", 0.9),
             max_output_tokens=data.get("max_output_tokens", 2048),

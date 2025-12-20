@@ -12,6 +12,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 import google.generativeai as genai
 
+from src.config.models import RECOMMENDED
+
 
 @dataclass
 class AgentResult:
@@ -47,7 +49,7 @@ class BaseAgent(ABC):
 
     def __init__(
         self,
-        model_name: str = "gemini-2.0-flash",
+        model_name: str = RECOMMENDED.DEFAULT,
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ):
