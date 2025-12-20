@@ -43,6 +43,7 @@ def job_to_db_record(job_data: dict) -> dict:
         "title": job_data.get("title", ""),
         "description": job_data.get("description", ""),
         "category": job_data.get("category", "other"),
+        "subcategory": job_data.get("subcategory"),
         "budget_type": job_data.get("budget_type", "unknown"),
         "job_type": job_data.get("job_type", "project"),
         "status": job_data.get("status", "open"),
@@ -101,7 +102,8 @@ def job_info_to_dict(job, category: str) -> dict:
     return {
         "title": job.title,
         "description": job.description,
-        "category": job.category.value if job.category else category,
+        "category": category,  # Lancersの検索カテゴリを使用
+        "subcategory": job.category.value if job.category else None,  # 自動分類サブカテゴリ
         "budget_type": job.budget_type.value if job.budget_type else "unknown",
         "job_id": job.job_id,
         "job_type": job.job_type.value if job.job_type else "project",

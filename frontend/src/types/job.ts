@@ -2,6 +2,7 @@ export interface Job {
   title: string;
   description: string;
   category: string;
+  subcategory: string | null;
   budget_type: string;
   job_id: string | null;
   job_type: string;
@@ -32,6 +33,7 @@ export interface JobType {
   label: string;
 }
 
+// Lancersの検索カテゴリ（大カテゴリ）
 export const CATEGORY_LABELS: Record<string, string> = {
   system: "システム開発",
   web: "Web制作",
@@ -40,6 +42,10 @@ export const CATEGORY_LABELS: Record<string, string> = {
   multimedia: "マルチメディア",
   business: "ビジネス",
   translation: "翻訳",
+};
+
+// 自動分類サブカテゴリ（詳細カテゴリ）
+export const SUBCATEGORY_LABELS: Record<string, string> = {
   web_development: "Web開発",
   app_development: "アプリ開発",
   scraping: "スクレイピング",
