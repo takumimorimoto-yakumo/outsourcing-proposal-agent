@@ -221,6 +221,22 @@ export async function clearDatabase(): Promise<{ success: boolean; message: stri
 // 後方互換性のためのエイリアス
 export const clearSpreadsheet = clearDatabase;
 
+/**
+ * 期限切れ案件をデータベースから削除
+ */
+export async function cleanupExpiredJobs(): Promise<{ success: boolean; deleted: number; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/scraper/cleanup-expired`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to cleanup expired jobs");
+  }
+
+  return response.json();
+}
+
 // =============================================================================
 // プロフィール管理API
 // =============================================================================

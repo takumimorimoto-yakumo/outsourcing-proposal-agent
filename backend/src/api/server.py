@@ -222,6 +222,34 @@ async def clear_database() -> dict:
         return {"success": False, "error": str(e)}
 
 
+async def cleanup_expired_jobs() -> dict:
+    """期限切れ案件をデータベースから削除"""
+    try:
+        supabase = get_supabase_client()
+
+        # remaining_days <= 0 または status = 'closed' の案件を削除
+        # remaining_days が 0 以下の案件
+        result1 = supabase.table("jobs").delete().lte("remaining_days", 0).execute()
+        deleted_by_days = len(result1.data) if result1.data else 0
+
+        # status が closed の案件
+        result2 = supabase.table("jobs").delete().eq("status", "closed").execute()
+        deleted_by_status = len(result2.data) if result2.data else 0
+
+        total_deleted = deleted_by_days + deleted_by_status
+        print(f"期限切れ案件削除完了: {total_deleted}件 (remaining_days: {deleted_by_days}, closed: {deleted_by_status})")
+
+        return {
+            "success": True,
+            "deleted": total_deleted,
+            "deleted_by_remaining_days": deleted_by_days,
+            "deleted_by_status": deleted_by_status,
+        }
+    except Exception as e:
+        print(f"期限切れ削除エラー: {e}")
+        return {"success": False, "error": str(e), "deleted": 0}
+
+
 @app.get("/")
 async def root():
     return {"message": "Proposal Generator API", "version": "1.0.0"}
@@ -229,18 +257,9 @@ async def root():
 
 @app.get("/api/categories")
 async def get_categories():
-    """利用可能なカテゴリ一覧"""
-    return {
-        "categories": [
-            {"value": "system", "label": "システム開発・運用"},
-            {"value": "web", "label": "Web制作・Webデザイン"},
-            {"value": "writing", "label": "ライティング・記事作成"},
-            {"value": "design", "label": "デザイン制作"},
-            {"value": "multimedia", "label": "写真・映像・音楽"},
-            {"value": "business", "label": "ビジネス・マーケティング"},
-            {"value": "translation", "label": "翻訳・通訳"},
-        ]
-    }
+    """利用可能なカテゴリ一覧（サブカテゴリ含む）"""
+    from src.config.lancers_categories import get_all_categories_flat
+    return {"categories": get_all_categories_flat()}
 
 
 @app.get("/api/job-types")
@@ -327,7 +346,13 @@ async def fetch_jobs(
 # =============================================================================
 
 class ScraperStartRequest(BaseModel):
-    """スクレイピング開始リクエスト"""
+    """スクレイピング開始リクエスト
+
+    categories形式:
+      - "system" = システム開発全体
+      - "system/app" = システム開発 > アプリ開発のみ
+      - "web/website" = Web制作 > ウェブサイト制作のみ
+    """
     categories: list[str] = []
     job_types: list[str] = ["project"]
     max_pages: int = 3
@@ -335,17 +360,35 @@ class ScraperStartRequest(BaseModel):
     save_to_database: bool = True
 
 
+def parse_category_selection(selection: str) -> tuple[str, Optional[str]]:
+    """カテゴリ選択をパース: "system/app" -> ("system", "app")"""
+    if "/" in selection:
+        parts = selection.split("/", 1)
+        return (parts[0], parts[1])
+    return (selection, None)
+
+
 async def run_scraper_task(request: ScraperStartRequest):
     """バックグラウンドでスクレイピングを実行"""
     global scraper_state, scraper_history
+
+    # カテゴリ選択をパース
+    selections = []
+    for cat_str in request.categories:
+        category, subcategory = parse_category_selection(cat_str)
+        selections.append((category, subcategory, cat_str))
+
+    if not selections:
+        selections = [(None, None, "all")]
 
     # デバッグ: リクエスト内容をログ出力
     print("=" * 50)
     print("スクレイピング開始")
     print(f"  categories: {request.categories}")
+    print(f"  parsed selections: {selections}")
     print(f"  job_types: {request.job_types}")
     print(f"  max_pages: {request.max_pages}")
-    print(f"  fetch_details: {request.fetch_details}")  # ← これが重要
+    print(f"  fetch_details: {request.fetch_details}")
     print(f"  save_to_database: {request.save_to_database}")
     print("=" * 50)
 
@@ -356,8 +399,7 @@ async def run_scraper_task(request: ScraperStartRequest):
     )
     scraper = LancersScraper(config)
 
-    categories = request.categories if request.categories else [None]
-    total_categories = len(categories)
+    total_selections = len(selections)
 
     max_pages = request.max_pages if request.max_pages > 0 else 100
     is_fetch_all = request.max_pages == 0
@@ -365,38 +407,39 @@ async def run_scraper_task(request: ScraperStartRequest):
     try:
         scraper_state.is_running = True
         scraper_state.current_page = 0
-        scraper_state.total_pages = max_pages * total_categories if not is_fetch_all else 0
+        scraper_state.total_pages = max_pages * total_selections if not is_fetch_all else 0
         scraper_state.jobs_fetched = 0
-        scraper_state.estimated_total = max_pages * 30 * total_categories if not is_fetch_all else 0
+        scraper_state.estimated_total = max_pages * 30 * total_selections if not is_fetch_all else 0
         scraper_state.started_at = datetime.now()
-        scraper_state.category = ", ".join(c or "all" for c in categories)
+        scraper_state.category = ", ".join(s[2] for s in selections)
         scraper_state.error = None
         scraper_state.cancelled = False
         scraper_state.phase = "fetching"
         scraper_state.message = "準備中..."
         scraper_state.current_category_index = 0
-        scraper_state.total_categories = total_categories
+        scraper_state.total_categories = total_selections
 
         all_results = []
 
-        for cat_idx, category in enumerate(categories):
+        for sel_idx, (category, subcategory, display_label) in enumerate(selections):
             if scraper_state.cancelled:
                 break
 
-            scraper_state.current_category_index = cat_idx + 1
-            scraper_state.category = category or "all"
-            category_label = category or "全カテゴリ"
+            scraper_state.current_category_index = sel_idx + 1
+            scraper_state.category = display_label
+            category_label = display_label or "全カテゴリ"
 
             jobs = []
             for page in range(1, max_pages + 1):
                 if scraper_state.cancelled:
                     break
 
-                scraper_state.current_page = cat_idx * max_pages + page
+                scraper_state.current_page = sel_idx * max_pages + page
                 scraper_state.message = f"{category_label} - {page}ページ目を取得中..."
 
                 url = scraper.build_search_url(
                     category=category,
+                    subcategory=subcategory,
                     job_types=request.job_types,
                     open_only=True,
                     page=page,
@@ -499,7 +542,7 @@ async def run_scraper_task(request: ScraperStartRequest):
         if scraper_state.cancelled:
             scraper_history.insert(0, {
                 "timestamp": datetime.now().isoformat(),
-                "category": ", ".join(c or "all" for c in categories),
+                "category": ", ".join(c or "all" for c in request.categories),
                 "count": len(all_results),
                 "status": "cancelled",
                 "duration_seconds": (datetime.now() - scraper_state.started_at).seconds,
@@ -511,7 +554,7 @@ async def run_scraper_task(request: ScraperStartRequest):
             output_dir = Path(__file__).parent.parent.parent / "output"
             output_dir.mkdir(exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            category_str = "_".join(c or "all" for c in categories)
+            category_str = "_".join(c or "all" for c in request.categories)
             json_path = output_dir / f"{category_str}_jobs_{timestamp}.json"
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(all_results, f, ensure_ascii=False, indent=2)
@@ -537,7 +580,7 @@ async def run_scraper_task(request: ScraperStartRequest):
         duration = (datetime.now() - scraper_state.started_at).seconds
         scraper_history.insert(0, {
             "timestamp": datetime.now().isoformat(),
-            "category": ", ".join(c or "all" for c in categories),
+            "category": ", ".join(c or "all" for c in request.categories),
             "count": len(all_results),
             "added": added_count,
             "updated": updated_count,
@@ -551,7 +594,7 @@ async def run_scraper_task(request: ScraperStartRequest):
         scraper_state.error = str(e)
         scraper_history.insert(0, {
             "timestamp": datetime.now().isoformat(),
-            "category": ", ".join(c or "all" for c in categories),
+            "category": ", ".join(c or "all" for c in request.categories),
             "count": 0,
             "status": "error",
             "error": str(e),
@@ -671,6 +714,20 @@ async def clear_jobs_database():
 async def clear_spreadsheet_alias():
     """データベースの案件データを削除（後方互換性）"""
     return await clear_jobs_database()
+
+
+@app.post("/api/scraper/cleanup-expired")
+async def cleanup_expired():
+    """期限切れ案件をデータベースから削除"""
+    result = await cleanup_expired_jobs()
+    if result.get("success"):
+        return {
+            "success": True,
+            "deleted": result.get("deleted", 0),
+            "message": f"{result.get('deleted', 0)}件の期限切れ案件を削除しました"
+        }
+    else:
+        raise HTTPException(status_code=500, detail=result.get("error", "不明なエラー"))
 
 
 @app.get("/api/scraper/history")

@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Job, Category, JobType } from "@/types/job";
+import { Job, Category, JobType, isExpired } from "@/types/job";
 import {
   fetchJobs,
   scoreJobWithAI,
   generateProposal,
+  cleanupExpiredJobs,
   AIJobScore,
   GenerateProposalResponse,
 } from "@/lib/api";
@@ -117,10 +118,22 @@ export default function Home() {
     setError(null);
 
     try {
+      // 期限切れ案件をDBから削除
+      try {
+        const cleanupResult = await cleanupExpiredJobs();
+        if (cleanupResult.deleted > 0) {
+          console.log(`期限切れ案件を${cleanupResult.deleted}件削除しました`);
+        }
+      } catch (e) {
+        console.warn("期限切れ削除をスキップ:", e);
+      }
+
       const result = await fetchJobs(null, ["project", "task", "competition"], 5);
-      setAllJobs(result.jobs);
+      // 念のためクライアント側でも期限切れをフィルタリング
+      const activeJobs = result.jobs.filter((job: Job) => !isExpired(job));
+      setAllJobs(activeJobs);
       // キャッシュを更新
-      localStorage.setItem(JOBS_CACHE_KEY, JSON.stringify(result.jobs));
+      localStorage.setItem(JOBS_CACHE_KEY, JSON.stringify(activeJobs));
     } catch (err) {
       if (!hasCache) {
         setError("案件の取得に失敗しました。APIサーバーが起動しているか確認してください。");
@@ -138,11 +151,20 @@ export default function Home() {
     setError(null);
 
     try {
+      // 期限切れ案件をDBから削除
+      try {
+        await cleanupExpiredJobs();
+      } catch (e) {
+        console.warn("期限切れ削除をスキップ:", e);
+      }
+
       const result = await fetchJobs(null, ["project", "task", "competition"], 5);
-      setAllJobs(result.jobs);
+      // 念のためクライアント側でも期限切れをフィルタリング
+      const activeJobs = result.jobs.filter((job: Job) => !isExpired(job));
+      setAllJobs(activeJobs);
       setSelectedJobIds([]);
       // キャッシュを更新
-      localStorage.setItem(JOBS_CACHE_KEY, JSON.stringify(result.jobs));
+      localStorage.setItem(JOBS_CACHE_KEY, JSON.stringify(activeJobs));
     } catch (err) {
       setError("案件の取得に失敗しました。APIサーバーが起動しているか確認してください。");
       console.error(err);
