@@ -163,9 +163,9 @@ class JobScoringAgent(BaseAgent):
         # ユーザープロフィール情報
         user_name = user_profile.get("name", "不明")
         skills = user_profile.get("skills", [])
+        specialties = user_profile.get("specialties", [])
         skills_detail = user_profile.get("skills_detail", "")
-        experience = user_profile.get("experience", "")
-        self_pr = user_profile.get("self_pr", "")
+        bio = user_profile.get("bio", "")  # 自己紹介・経験
         preferred_categories = user_profile.get("preferred_categories", [])
         preferred_categories_detail = user_profile.get("preferred_categories_detail", "")
 
@@ -199,9 +199,10 @@ class JobScoringAgent(BaseAgent):
 
 **名前**: {user_name}
 **スキル**: {', '.join(skills) if skills else 'なし'}
+**得意分野**: {', '.join(specialties) if specialties else 'なし'}
 **スキル詳細**: {skills_detail if skills_detail else 'なし'}
-**経験**: {experience if experience else 'なし'}
-**自己PR**: {self_pr if self_pr else 'なし'}
+**自己紹介・経験**:
+{bio if bio else 'なし'}
 **希望カテゴリ**: {', '.join(preferred_categories) if preferred_categories else 'なし'}
 **希望カテゴリ詳細**: {preferred_categories_detail if preferred_categories_detail else 'なし'}
 
