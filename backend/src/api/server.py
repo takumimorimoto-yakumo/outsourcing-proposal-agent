@@ -24,6 +24,7 @@ load_dotenv(env_path)
 from src.models.config import ScrapingConfig, HumanLikeConfig, TimeoutConfig
 from src.scrapers.lancers import LancersScraper
 from src.db.supabase_client import get_supabase_client
+from src.config.models import RECOMMENDED
 
 
 # スクレイパー状態管理
@@ -73,6 +74,7 @@ def job_to_db_record(job: dict) -> dict:
         "title": job.get("title", ""),
         "description": job.get("description", ""),
         "category": job.get("category", "other"),
+        "subcategory": job.get("subcategory"),
         "budget_type": job.get("budget_type", "unknown"),
         "job_type": job.get("job_type", "project"),
         "status": job.get("status", "open"),
@@ -102,6 +104,7 @@ def db_record_to_job(record: dict) -> dict:
         "title": record.get("title", ""),
         "description": record.get("description", ""),
         "category": record.get("category", "other"),
+        "subcategory": record.get("subcategory"),
         "budget_type": record.get("budget_type", "unknown"),
         "job_type": record.get("job_type", "project"),
         "status": record.get("status", "open"),
@@ -440,7 +443,8 @@ async def run_scraper_task(request: ScraperStartRequest):
                 job_data = {
                     "title": job.title,
                     "description": job.description,
-                    "category": job.category.value if job.category else "",
+                    "category": category or "",  # Lancersの検索カテゴリを使用
+                    "subcategory": job.category.value if job.category else None,  # 自動分類サブカテゴリ
                     "budget_type": job.budget_type.value if job.budget_type else "",
                     "job_id": job.job_id,
                     "job_type": job.job_type.value if job.job_type else "",
@@ -752,6 +756,115 @@ async def update_profile(profile: UserProfileModel):
         return {"success": True, "message": "プロフィールを保存しました"}
     else:
         raise HTTPException(status_code=500, detail="プロフィールの保存に失敗しました")
+
+
+@app.post("/api/profile/auto-complete")
+async def auto_complete_profile():
+    """自己紹介文からプロフィールを自動補完"""
+    import google.generativeai as genai
+
+    # 現在のプロフィールを読み込み
+    profile = load_user_profile()
+    bio = profile.get("bio", "")
+
+    if not bio or len(bio) < 20:
+        raise HTTPException(status_code=400, detail="自己紹介文が短すぎます。もう少し詳しく書いてください。")
+
+    # Gemini APIキーを確認
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY が設定されていません")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(RECOMMENDED.PROFILE_ANALYSIS)
+
+    # 既存のスキル・得意分野
+    existing_skills = profile.get("skills", [])
+    existing_specialties = profile.get("specialties", [])
+
+    prompt = f"""以下の自己紹介文を分析して、クラウドソーシングで案件を獲得するためのプロフィール情報を抽出してください。
+
+## 自己紹介文
+{bio}
+
+## 既存のスキル（参考）
+{', '.join(existing_skills) if existing_skills else 'なし'}
+
+## 既存の得意分野（参考）
+{', '.join(existing_specialties) if existing_specialties else 'なし'}
+
+## 抽出してほしい情報
+
+### skills（技術スキル）
+自己紹介文から読み取れる技術スキルを抽出してください。
+例: Python, JavaScript, TypeScript, React, Next.js, Vue.js, Node.js, Go, AWS, GCP, Docker, MySQL, PostgreSQL, 機械学習, データ分析, Webスクレイピング, 自動化 など
+
+### specialties（得意分野）
+自己紹介文から読み取れる得意分野・専門領域を抽出してください。
+例: Webアプリケーション開発, モバイルアプリ開発, API開発, インフラ構築, データ収集・スクレイピング, 業務自動化, 機械学習・AI, ECサイト構築, 新規事業開発, プロジェクトマネジメント など
+
+### preferred_categories（Lancers案件の希望カテゴリ）
+この人に合いそうなLancersカテゴリを選んでください。
+選択肢: system（システム開発・運用）, web（Web制作・Webデザイン）, writing（ライティング）, design（デザイン）, multimedia（マルチメディア）, business（ビジネス・マーケティング）, translation（翻訳）
+
+### skills_detail（スキルの詳細説明）
+自己紹介文から、どのような技術をどう使えるかを要約して1-2文で記述してください。
+
+### preferred_categories_detail（希望案件の詳細）
+どのような案件を得意としているか、自己紹介文から1-2文で要約してください。
+
+## 出力形式
+必ず以下のJSON形式で出力してください：
+
+```json
+{{
+  "skills": ["スキル1", "スキル2", ...],
+  "specialties": ["得意分野1", "得意分野2", ...],
+  "preferred_categories": ["system", "web"],
+  "skills_detail": "スキルの詳細説明...",
+  "preferred_categories_detail": "希望案件の詳細..."
+}}
+```
+
+既存のスキルや得意分野があれば、それも含めて重複なく出力してください。"""
+
+    try:
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=0.3,
+                max_output_tokens=1024,
+            ),
+        )
+
+        response_text = response.text
+
+        # JSONを抽出
+        import json
+        if "```json" in response_text:
+            start = response_text.find("```json") + 7
+            end = response_text.find("```", start)
+            json_str = response_text[start:end].strip()
+        elif "```" in response_text:
+            start = response_text.find("```") + 3
+            end = response_text.find("```", start)
+            json_str = response_text[start:end].strip()
+        else:
+            start = response_text.find("{")
+            end = response_text.rfind("}") + 1
+            json_str = response_text[start:end]
+
+        suggestions = json.loads(json_str)
+
+        return {
+            "success": True,
+            "suggestions": suggestions,
+            "message": "自己紹介文からプロフィール情報を抽出しました",
+        }
+
+    except Exception as e:
+        print(f"プロフィール自動補完エラー: {e}")
+        raise HTTPException(status_code=500, detail=f"AI分析エラー: {str(e)}")
 
 
 # =============================================================================

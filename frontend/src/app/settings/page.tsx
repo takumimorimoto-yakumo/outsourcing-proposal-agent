@@ -16,6 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Trash2,
   Database,
   AlertTriangle,
@@ -28,8 +33,11 @@ import {
   Briefcase,
   Target,
   Settings,
+  ChevronDown,
+  Sparkles,
+  Check,
 } from "lucide-react";
-import { clearSpreadsheet, getProfile, saveProfile } from "@/lib/api";
+import { clearSpreadsheet, getProfile, saveProfile, autoCompleteProfile, ProfileSuggestions } from "@/lib/api";
 import {
   UserProfile,
   DEFAULT_USER_PROFILE,
@@ -42,6 +50,8 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAutoCompleting, setIsAutoCompleting] = useState(false);
+  const [suggestions, setSuggestions] = useState<ProfileSuggestions | null>(null);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -52,6 +62,8 @@ export default function SettingsPage() {
   const [newSkill, setNewSkill] = useState("");
   const [newSpecialty, setNewSpecialty] = useState("");
   const [newPortfolioUrl, setNewPortfolioUrl] = useState("");
+  const [skillPopoverOpen, setSkillPopoverOpen] = useState(false);
+  const [specialtyPopoverOpen, setSpecialtyPopoverOpen] = useState(false);
 
   // プロフィール読み込み
   useEffect(() => {
@@ -108,6 +120,39 @@ export default function SettingsPage() {
     } finally {
       setIsClearing(false);
     }
+  };
+
+  // AIでプロフィールを自動補完
+  const handleAutoComplete = async () => {
+    try {
+      setIsAutoCompleting(true);
+      setMessage(null);
+      setSuggestions(null);
+      const result = await autoCompleteProfile();
+      setSuggestions(result.suggestions);
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "自動補完に失敗しました",
+      });
+    } finally {
+      setIsAutoCompleting(false);
+    }
+  };
+
+  // 提案を適用
+  const applySuggestions = () => {
+    if (!suggestions) return;
+    setProfile((prev) => ({
+      ...prev,
+      skills: [...new Set([...prev.skills, ...suggestions.skills])],
+      specialties: [...new Set([...prev.specialties, ...suggestions.specialties])],
+      preferred_categories: suggestions.preferred_categories,
+      skills_detail: suggestions.skills_detail || prev.skills_detail,
+      preferred_categories_detail: suggestions.preferred_categories_detail || prev.preferred_categories_detail,
+    }));
+    setSuggestions(null);
+    setMessage({ type: "success", text: "AIの提案を適用しました。保存ボタンを押して確定してください。" });
   };
 
   // タグ追加・削除
@@ -262,8 +307,101 @@ export default function SettingsPage() {
                             placeholder="自己紹介を入力..."
                             className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleAutoComplete}
+                            disabled={isAutoCompleting || !profile.bio || profile.bio.length < 20}
+                            className="mt-2"
+                          >
+                            {isAutoCompleting ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-4 w-4 mr-2" />
+                            )}
+                            {isAutoCompleting ? "分析中..." : "AIで自動補完"}
+                          </Button>
+                          <p className="text-xs text-muted-foreground">
+                            自己紹介文からスキルや得意分野をAIが自動抽出します
+                          </p>
                         </div>
                       </div>
+
+                      {/* AI提案表示 */}
+                      {suggestions && (
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-medium text-sm flex items-center gap-2">
+                              <Sparkles className="h-4 w-4 text-blue-600" />
+                              AIが提案するプロフィール情報
+                            </h4>
+                            <Button variant="ghost" size="sm" onClick={() => setSuggestions(null)}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="space-y-3 text-sm">
+                            {suggestions.skills.length > 0 && (
+                              <div>
+                                <p className="text-muted-foreground mb-1">スキル:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {suggestions.skills.map((skill) => (
+                                    <Badge key={skill} variant="secondary" className="text-xs">
+                                      {skill}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {suggestions.specialties.length > 0 && (
+                              <div>
+                                <p className="text-muted-foreground mb-1">得意分野:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {suggestions.specialties.map((s) => (
+                                    <Badge key={s} variant="secondary" className="text-xs">
+                                      {s}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {suggestions.preferred_categories.length > 0 && (
+                              <div>
+                                <p className="text-muted-foreground mb-1">希望カテゴリ:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {suggestions.preferred_categories.map((c) => (
+                                    <Badge key={c} variant="outline" className="text-xs">
+                                      {CATEGORY_LABELS[c] || c}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {suggestions.skills_detail && (
+                              <div>
+                                <p className="text-muted-foreground mb-1">スキル詳細:</p>
+                                <p className="text-xs bg-white dark:bg-gray-800 p-2 rounded">{suggestions.skills_detail}</p>
+                              </div>
+                            )}
+                            {suggestions.preferred_categories_detail && (
+                              <div>
+                                <p className="text-muted-foreground mb-1">希望カテゴリ詳細:</p>
+                                <p className="text-xs bg-white dark:bg-gray-800 p-2 rounded">{suggestions.preferred_categories_detail}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2 pt-2">
+                            <Button size="sm" onClick={applySuggestions}>
+                              <Check className="h-4 w-4 mr-1" />
+                              この内容を適用
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => setSuggestions(null)}>
+                              キャンセル
+                            </Button>
+                          </div>
+                        </div>
+                      )}
 
                       <Separator />
 
@@ -386,15 +524,42 @@ export default function SettingsPage() {
                             onChange={(e) => setNewSkill(e.target.value)}
                             placeholder="スキルを追加..."
                             onKeyDown={(e) => e.key === "Enter" && addSkill()}
-                            list="skill-suggestions"
+                            className="flex-1"
                           />
-                          <datalist id="skill-suggestions">
-                            {SKILL_SUGGESTIONS.filter(
-                              (s) => !profile.skills.includes(s)
-                            ).map((s) => (
-                              <option key={s} value={s} />
-                            ))}
-                          </datalist>
+                          <Popover open={skillPopoverOpen} onOpenChange={setSkillPopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="gap-1">
+                                候補から選択
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[400px] p-3" align="end">
+                              <div className="space-y-2">
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  クリックして追加
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 max-h-[300px] overflow-y-auto">
+                                  {SKILL_SUGGESTIONS.filter(
+                                    (s) => !profile.skills.includes(s)
+                                  ).map((s) => (
+                                    <Badge
+                                      key={s}
+                                      variant="outline"
+                                      className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors py-1 px-2 text-xs"
+                                      onClick={() => {
+                                        setProfile((prev) => ({
+                                          ...prev,
+                                          skills: [...prev.skills, s],
+                                        }));
+                                      }}
+                                    >
+                                      {s}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                           <Button variant="outline" size="icon" onClick={addSkill}>
                             <Plus className="h-4 w-4" />
                           </Button>
@@ -428,15 +593,42 @@ export default function SettingsPage() {
                             onChange={(e) => setNewSpecialty(e.target.value)}
                             placeholder="得意分野を追加..."
                             onKeyDown={(e) => e.key === "Enter" && addSpecialty()}
-                            list="specialty-suggestions"
+                            className="flex-1"
                           />
-                          <datalist id="specialty-suggestions">
-                            {SPECIALTY_SUGGESTIONS.filter(
-                              (s) => !profile.specialties.includes(s)
-                            ).map((s) => (
-                              <option key={s} value={s} />
-                            ))}
-                          </datalist>
+                          <Popover open={specialtyPopoverOpen} onOpenChange={setSpecialtyPopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="gap-1">
+                                候補から選択
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[400px] p-3" align="end">
+                              <div className="space-y-2">
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  クリックして追加
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 max-h-[300px] overflow-y-auto">
+                                  {SPECIALTY_SUGGESTIONS.filter(
+                                    (s) => !profile.specialties.includes(s)
+                                  ).map((s) => (
+                                    <Badge
+                                      key={s}
+                                      variant="outline"
+                                      className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors py-1 px-2 text-xs"
+                                      onClick={() => {
+                                        setProfile((prev) => ({
+                                          ...prev,
+                                          specialties: [...prev.specialties, s],
+                                        }));
+                                      }}
+                                    >
+                                      {s}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                           <Button variant="outline" size="icon" onClick={addSpecialty}>
                             <Plus className="h-4 w-4" />
                           </Button>

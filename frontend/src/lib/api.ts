@@ -256,6 +256,35 @@ export async function saveProfile(
   return response.json();
 }
 
+// プロフィール自動補完（AIで自己紹介文からスキルなどを抽出）
+export interface ProfileSuggestions {
+  skills: string[];
+  specialties: string[];
+  preferred_categories: string[];
+  skills_detail: string;
+  preferred_categories_detail: string;
+}
+
+export async function autoCompleteProfile(): Promise<{
+  success: boolean;
+  suggestions: ProfileSuggestions;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE_URL}/api/profile/auto-complete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to auto-complete profile");
+  }
+
+  return response.json();
+}
+
 // =============================================================================
 // 案件優先度分析API
 // =============================================================================
