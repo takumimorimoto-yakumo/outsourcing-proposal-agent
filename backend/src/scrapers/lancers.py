@@ -60,6 +60,7 @@ class LancersScraper(BaseScraper):
     def build_search_url(
         self,
         category: Optional[str] = None,
+        subcategory: Optional[str] = None,
         job_types: Optional[list[str]] = None,
         open_only: bool = True,
         page: int = 1,
@@ -68,6 +69,7 @@ class LancersScraper(BaseScraper):
 
         Args:
             category: カテゴリ（system, web, writing, design等）
+            subcategory: サブカテゴリ（app, website, scraping等）
             job_types: 案件形式のリスト（project, task, competition, job）
             open_only: 募集中のみ
             page: ページ番号
@@ -76,6 +78,9 @@ class LancersScraper(BaseScraper):
 
         if category and category in self.CATEGORY_SLUGS:
             base = f"{base}/{self.CATEGORY_SLUGS[category]}"
+            # サブカテゴリが指定されていれば追加
+            if subcategory:
+                base = f"{base}/{subcategory}"
 
         params = []
         if open_only:
