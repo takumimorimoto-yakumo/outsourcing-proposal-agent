@@ -43,7 +43,7 @@ const PIPELINE_STAGES: PipelineStage[] = [
   },
   {
     id: "drafts",
-    label: "提案作成中",
+    label: "下書き",
     icon: PenLine,
     href: "/drafts",
   },

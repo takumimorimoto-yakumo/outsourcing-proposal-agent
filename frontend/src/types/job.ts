@@ -21,6 +21,33 @@ export interface Job {
   client_name: string | null;
   client_rating: number | null;
   client_order_history: number | null;
+  // パイプライン管理用
+  pipeline_status?: PipelineStatus;
+  added_at?: string;  // パイプラインに追加された日時
+  expired_at?: string; // 期限切れになった日時
+}
+
+// パイプラインステータス
+export type PipelineStatus = "draft" | "submitted" | "ongoing" | "expired" | "rejected" | "completed";
+
+export const PIPELINE_STATUS_LABELS: Record<PipelineStatus, string> = {
+  draft: "下書き",
+  submitted: "応募済み",
+  ongoing: "受注",
+  expired: "期限切れ",
+  rejected: "落選",
+  completed: "完了",
+};
+
+// 期限切れ判定
+export function isExpired(job: Job): boolean {
+  if (job.remaining_days !== null && job.remaining_days <= 0) {
+    return true;
+  }
+  if (job.status === "closed") {
+    return true;
+  }
+  return false;
 }
 
 export interface Category {
