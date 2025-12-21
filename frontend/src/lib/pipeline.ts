@@ -48,10 +48,19 @@ const apiStatusToStage: Record<ApiPipelineStatus, keyof typeof STORAGE_KEYS> = {
   completed: "history",
 };
 
+// APIからのパイプライン情報（ジョブ詳細なし）
+export interface PipelineInfo {
+  job_id: string;
+  pipeline_status: PipelineStatus;
+  added_at: string;
+  status_changed_at: string;
+  notes: string;
+}
+
 /**
- * APIからパイプライン案件を取得
+ * APIからパイプライン情報を取得（ジョブ詳細なし）
  */
-export async function getPipelineJobsAsync(stage: keyof typeof STORAGE_KEYS): Promise<PipelineJob[]> {
+export async function getPipelineJobsAsync(stage: keyof typeof STORAGE_KEYS): Promise<PipelineInfo[]> {
   try {
     const apiStatus = stageToApiStatus[stage];
     let statuses: ApiPipelineStatus[];
@@ -71,16 +80,13 @@ export async function getPipelineJobsAsync(stage: keyof typeof STORAGE_KEYS): Pr
       }
     }
 
-    // APIのPipelineJobをフロントエンドのPipelineJobに変換
+    // APIのPipelineJobをPipelineInfoに変換
     return allJobs.map((apiJob) => ({
       job_id: apiJob.job_id,
-      title: "",
-      description: "",
-      url: "",
-      source: "lancers" as const,
-      category: "",
       pipeline_status: apiJob.pipeline_status as PipelineStatus,
       added_at: apiJob.added_at,
+      status_changed_at: apiJob.status_changed_at,
+      notes: apiJob.notes || "",
     }));
   } catch (error) {
     console.error("Failed to fetch pipeline jobs from API:", error);
@@ -118,11 +124,14 @@ export async function addToPipelineAsync(
   stage: "drafts" | "submitted" | "ongoing"
 ): Promise<PipelineJob> {
   const apiStatus = stageToApiStatus[stage];
+  const jobId = job.job_id || "";
 
-  try {
-    await apiAddToPipeline(job.job_id, apiStatus);
-  } catch (error) {
-    console.error("Failed to add to pipeline via API:", error);
+  if (jobId) {
+    try {
+      await apiAddToPipeline(jobId, apiStatus);
+    } catch (error) {
+      console.error("Failed to add to pipeline via API:", error);
+    }
   }
 
   // ローカル状態用のオブジェクトを返す
@@ -152,9 +161,12 @@ export function addToPipeline(job: Job, stage: "drafts" | "submitted" | "ongoing
   }
 
   // APIにも非同期で追加（バックグラウンド）
-  apiAddToPipeline(job.job_id, stageToApiStatus[stage]).catch((e) =>
-    console.error("Failed to sync pipeline to API:", e)
-  );
+  const jobIdForApi = job.job_id || "";
+  if (jobIdForApi) {
+    apiAddToPipeline(jobIdForApi, stageToApiStatus[stage]).catch((e) =>
+      console.error("Failed to sync pipeline to API:", e)
+    );
+  }
 
   return pipelineJob;
 }
@@ -280,9 +292,12 @@ export function processExpiredJobs(): { movedCount: number } {
 
       // APIにも非同期で反映
       for (const expiredJob of expiredJobs) {
-        apiChangeJobStatus(expiredJob.job_id, "expired").catch((e) =>
-          console.error("Failed to sync expired job to API:", e)
-        );
+        const expiredJobId = expiredJob.job_id || "";
+        if (expiredJobId) {
+          apiChangeJobStatus(expiredJobId, "expired").catch((e) =>
+            console.error("Failed to sync expired job to API:", e)
+          );
+        }
       }
     }
   }
