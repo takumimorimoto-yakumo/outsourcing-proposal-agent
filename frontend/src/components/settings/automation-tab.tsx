@@ -240,7 +240,8 @@ export function AutomationTab({ setMessage }: AutomationTabProps) {
     try {
       setIsTriggering(true);
       setMessage(null);
-      const pagesCount = fetchAll ? 0 : parseInt(maxPages);
+      // 全件取得の場合は大きな数を指定（0は「取得しない」と解釈される）
+      const pagesCount = fetchAll ? 100 : parseInt(maxPages);
       await triggerWorkflow({
         categories: buildCategoryParams(),
         job_types: triggerJobTypes,
